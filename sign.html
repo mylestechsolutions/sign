@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Myles Tech Sign</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Dancing+Script:wght@600&display=swap">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <header class="top"><div class="brand">Myles Tech <span>Sign</span></div><div id="lang"></div></header>
+  <main class="stack">
+    <section id="s-head" class="card"><h1 id="s-title" data-i18n="sign.title"></h1><p class="muted" id="s-number"></p></section>
+    <section id="s-message" class="card hidden"><p id="s-message-text"></p><div class="actions" id="s-message-actions"></div></section>
+    <section id="s-code" class="card lift hidden">
+      <p id="s-code-lead"></p>
+      <div class="actions"><button class="pill blue" id="s-send" data-i18n="sign.code.send"></button></div>
+      <div id="s-code-2" class="hidden">
+        <label class="field"><span data-i18n="signin.code"></span><input id="s-code-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+        <div class="actions"><button class="pill blue" id="s-open" data-i18n="sign.code.go"></button></div>
+      </div>
+      <p class="error" id="s-code-error"></p>
+    </section>
+    <section id="s-doc" class="stack hidden">
+      <div class="card"><div class="pages" id="s-pages"></div></div>
+      <div class="card lift"><h2 data-i18n="sign.yours"></h2><div class="grid" id="s-form"></div>
+        <canvas class="pad" id="s-pad"></canvas><input id="s-typed" class="hidden" data-i18n-ph="pad.typed">
+        <div class="actions"><button class="pill" id="s-clear" data-i18n="pad.clear"></button><button class="pill" id="s-mode" data-i18n="pad.type"></button></div>
+        <label class="field" style="margin-top:14px"><input type="checkbox" id="s-agree"><span data-i18n="sign.agree"></span></label>
+        <div class="actions"><button class="pill blue large" id="s-sign" data-i18n="sign.go"></button></div>
+        <p class="why" id="s-why"></p><p class="error" id="s-error"></p></div>
+    </section>
+    <section id="s-done" class="card lift hidden"><h2 data-i18n="sign.done"></h2>
+      <div class="actions"><button class="pill blue" id="s-download" data-i18n="sign.download"></button></div></section>
+  </main>
+  <script src="assets/config.js"></script>
+  <script src="assets/core.js"></script>
+  <script src="assets/i18n.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/pad.js"></script>
+  <script type="module" src="assets/sign.js"></script>
+</body>
+</html>
