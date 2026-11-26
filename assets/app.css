@@ -12,7 +12,7 @@
 body { margin: 0; background: var(--page); color: var(--navy); font: 15px/1.5 var(--font); }
 .top { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.01em; font-size: 17px; }
-.brand .logo { height: 48px; width: auto; display: block; }
+.brand .logo { height: 48px; width: 48px; display: block; border-radius: 12px; box-shadow: var(--rest); }
 .brand span { color: var(--blue); }
 main { max-width: 980px; margin: 0 auto; padding: 8px 16px 64px; }
 h1 { font-size: 26px; letter-spacing: -.02em; margin: 6px 0 4px; }
