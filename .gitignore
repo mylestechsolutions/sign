@@ -1,0 +1,6 @@
+node_modules/
+templates/
+apps-script/TemplateNda.html
+.clasp.json
+.DS_Store
+tests/e2e/.artifacts/
