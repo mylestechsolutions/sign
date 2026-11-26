@@ -176,11 +176,11 @@ test('sigv4 signs an SES request exactly as botocore does', () => {
 });
 
 test('mime builds an ASCII message with text, HTML and a PDF attachment', () => {
-  const raw = C.mime({ fromName: 'Myles Tech Solutions', from: 'sign@example.org', to: 'awa@example.org',
+  const raw = C.mime({ fromName: 'MylesTech', from: 'sign@example.org', to: 'awa@example.org',
     replyTo: 'm@example.org', subject: 'Signé: NDA', text: 'Bonjour Awa', html: '<p>Bonjour</p>',
     attachments: [{ name: 'MT-NDA-2026-0001 signed.pdf', type: 'application/pdf', base64: Buffer.from('%PDF-1.4 x'.repeat(30)).toString('base64') }] },
   'seed1', NODE);
-  assert.match(raw, /^From: Myles Tech Solutions <sign@example.org>\r\n/);
+  assert.match(raw, /^From: MylesTech <sign@example.org>\r\n/);
   assert.match(raw, /\r\nReply-To: m@example.org\r\n/);
   assert.match(raw, /\r\nSubject: =\?UTF-8\?B\?/);
   assert.match(raw, /filename="MT-NDA-2026-0001 signed.pdf"/);

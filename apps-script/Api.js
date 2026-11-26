@@ -210,7 +210,7 @@ var Api = (function () {
         if (d.signed_pdf_id) blobs.push(DriveApp.getFileById(d.signed_pdf_id).getBlob().setName('signed/' + d.number + ' signed.pdf'));
       });
       var zip = Utilities.zip(blobs, 'record.zip');
-      return { name: 'Myles Tech record ' + (type || 'all') + ' ' + now().slice(0, 10) + '.zip', documents: docs.length,
+      return { name: 'MylesTech record ' + (type || 'all') + ' ' + now().slice(0, 10) + '.zip', documents: docs.length,
         zip: Utilities.base64Encode(zip.getBytes()) };
     },
     'activity.list': function (req) {
