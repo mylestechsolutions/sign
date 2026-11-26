@@ -4,3 +4,4 @@ apps-script/TemplateNda.html
 .clasp.json
 .DS_Store
 tests/e2e/.artifacts/
+apps-script/Secrets.html
