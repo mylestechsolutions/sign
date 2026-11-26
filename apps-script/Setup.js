@@ -57,7 +57,12 @@ function importSecrets_() {
   p.setProperty('SES_ACCESS_KEY', s.accessKey);
   p.setProperty('SES_SECRET_KEY', s.secretKey);
   p.setProperty('MAIL_FROM', s.from);
-  return 'SES key loaded (key ending ' + s.accessKey.slice(-4) + ', from ' + s.from + ')';
+  // owners named in the file (for example a company address the owner signs in with), kept out of the public code
+  (s.owners || []).forEach(function (email) {
+    var e = String(email).toLowerCase();
+    if (SignCore.isEmail(e) && !Store.manager(e)) Store.saveManager({ email: e, name: '', title: '', role: 'owner', added_at: new Date().toISOString() });
+  });
+  return 'SES key loaded (key ending ' + s.accessKey.slice(-4) + ', from ' + s.from + '), owners added: ' + (s.owners || []).length;
 }
 
 function setup() {

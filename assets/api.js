@@ -8,6 +8,7 @@ var Http = (function () {
     return e;
   }
   async function call(action, payload, client) {
+    if (!backend() || backend().indexOf('DEPLOYMENT_ID') >= 0) throw err('NOT_READY');
     var body = JSON.stringify(Object.assign({ action: action, client: client || { browser: navigator.userAgent } }, payload || {}));
     var res;
     try {
