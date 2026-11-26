@@ -96,6 +96,8 @@ export async function start(port = 0) {
       d.signed = pdf('signed ' + d.number + ' ' + d.completed_at); d.sha = sha(d.signed); d.recipient = v.clean;
       step(d.number, 'signed', d.recipient_email);
       return { number: d.number, pdf: d.signed.toString('base64') }; },
+    'recipient.download': (r) => { const d = s.docs.find((x) => x.number === r.number); if (!d || s.tickets[r.ticket] !== d.number) throw fail('CODE_AGAIN');
+      return { name: d.number + ' signed.pdf', pdf: d.signed.toString('base64') }; },
     'check.lookup': (r) => { const d = s.docs.find((x) => x.sha === r.sha256); const t = d && tpl(d.template);
       return d ? { found: true, number: d.number, title_en: t.title_en, title_fr: t.title_fr,
         company: { name: d.company.company_signatory_name, signedAt: d.sent_at }, recipient: { name: d.recipient.recipient_name, signedAt: d.completed_at } } : { found: false }; }

@@ -83,6 +83,8 @@ test('a manager picks the NDA, sends it, the intern signs it, the check page kno
     await intern.check('#s-agree');
     await intern.click('#s-sign');
     await intern.waitForSelector('#s-done:not(.hidden)');
+    const [file] = await Promise.all([intern.waitForEvent('download'), intern.click('#s-download')]);
+    assert.match(file.suggestedFilename(), /signed\.pdf$/, 'the signed copy downloads on demand');
 
     // the record: the manager's list shows it signed, its history has the steps
     await page.reload();

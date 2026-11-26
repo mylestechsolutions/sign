@@ -190,3 +190,14 @@ test('mime builds an ASCII message with text, HTML and a PDF attachment', () => 
   assert.equal(Buffer.from(text.replace(/\r\n/g, ''), 'base64').toString('utf8'), 'Bonjour Awa');
   assert.match(raw, /--mixed_seed1--\r\n$/);
 });
+
+test('mime puts a copy recipient in a Cc header', () => {
+  const crypto = require('node:crypto');
+  const c = { b64: (t) => Buffer.from(t, 'utf8').toString('base64') };
+  const raw = C.mime({ fromName: 'MylesTech', from: 'sign@example.org', to: 'awa@example.org', cc: 'boss@example.org',
+    subject: 'Signed', text: 'x', html: '<p>x</p>', attachments: [] }, crypto.randomBytes(8).toString('hex'), c);
+  assert.match(raw, /\r\nTo: awa@example.org\r\nCc: boss@example.org\r\n/);
+  const without = C.mime({ fromName: 'MylesTech', from: 'sign@example.org', to: 'awa@example.org', subject: 'S', text: 'x',
+    html: '<p>x</p>', attachments: [] }, 'b1', c);
+  assert.doesNotMatch(without, /\r\nCc:/);
+});

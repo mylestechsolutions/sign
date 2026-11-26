@@ -52,9 +52,9 @@ var Mail = (function () {
       if (b.base64) return b;
       return { name: b.getName(), type: b.getContentType() || 'application/pdf', base64: Utilities.base64Encode(b.getBytes()) };
     });
-    var raw = SignCore.mime({ fromName: NAME, from: from, to: m.to, replyTo: opts.replyTo, subject: m.subject,
+    var raw = SignCore.mime({ fromName: NAME, from: from, to: m.to, cc: opts.cc, replyTo: opts.replyTo, subject: m.subject,
       text: text, html: page(m.en, m.fr, m.button), attachments: attachments }, Utilities.getUuid().replace(/-/g, ''), CRYPTO);
-    var body = JSON.stringify({ FromEmailAddress: from, Destination: { ToAddresses: [m.to] },
+    var body = JSON.stringify({ FromEmailAddress: from, Destination: opts.cc ? { ToAddresses: [m.to], CcAddresses: [opts.cc] } : { ToAddresses: [m.to] },
       Content: { Raw: { Data: Utilities.base64Encode(raw) } } });
     var amzDate = Utilities.formatDate(new Date(), 'UTC', "yyyyMMdd'T'HHmmss'Z'");
     var headers = SignCore.sigv4({ host: HOST, path: PATH, region: 'us-east-1', service: 'ses', body: body, amzDate: amzDate },

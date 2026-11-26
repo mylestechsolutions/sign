@@ -114,7 +114,10 @@ function sign() {
         { number, secret, ticket: st.ticket, values: values(), signature: st.pad.png(), agree: $('#s-agree').checked },
         { browser: navigator.userAgent, ip: st.ip });
       show('s-done');
-      $('#s-download').onclick = () => Http.download(r.pdf, number + ' signed.pdf');
+      $('#s-download').onclick = () => Http.busy($('#s-download'), async () => {
+        try { const d = await Http.call('recipient.download', { number, ticket: st.ticket }); Http.download(d.pdf, d.name); }
+        catch (e) { Http.toast(e.message); }
+      });
     } catch (e) {
       $('#s-why').textContent = '';
       if (e.code === 'CODE_AGAIN') { codeStep({ sentTo: '' }); return; }

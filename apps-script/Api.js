@@ -191,13 +191,13 @@ var Api = (function () {
       var rec = Store.withLock(function () {
         var number = Store.nextNumber(t.code);
         var dir = Docs.folder(Store.prop('DOCS_ID')).createFolder(number);
-        dir.createFile(sig.copyBlob().setName('company-signature.png'));
+        var sigFile = dir.createFile(sig.copyBlob().setName('company-signature.png'));
         var at = now();
         var r = {
           number: number, template: t.code, status: 'sent', manager_email: m.email,
           recipient_name: clean.recipient_name, recipient_email: clean.recipient_email.toLowerCase(),
           created_at: at, sent_at: at, company_signed_at: at, expires_at: SignCore.expiresAt(Date.parse(at)),
-          folder_id: dir.getId(), fields_json: JSON.stringify(clean)
+          folder_id: dir.getId(), fields_json: JSON.stringify(Object.assign({ _sig: sigFile.getId() }, clean))
         };
         r.secret_hash = Auth.sha(Auth.newSecret(number));
         return Store.writeRow('documents', r);
@@ -335,7 +335,7 @@ var Api = (function () {
     'recipient.sign': function (req) {
       var rec0 = openRec(req);
       Auth.checkTicket(rec0.number, req.ticket);
-      if (rec0.status === 'completed') return { already: true, pdf: Docs.base64Of(rec0.signed_pdf_id) };
+      if (rec0.status === 'completed') return { already: true, number: rec0.number };
       if (req.agree !== true) throw fail_('AGREE_NEEDED');
       var t = template(rec0.template);
       var clean = complete(SignCore.validateFields(t.names, req.values, 'recipient'));
@@ -350,7 +350,8 @@ var Api = (function () {
         var at = now();
         var values = Object.assign({}, companyValues(t, company, rec.number), clean, {
           company_signed_date: rec.company_signed_at.slice(0, 10), recipient_signed_date: at.slice(0, 10) });
-        var sigs = { company_signature: dir.getFilesByName('company-signature.png').next().getBlob(),
+        var companySigFile = company._sig ? DriveApp.getFileById(company._sig) : dir.getFilesByName('company-signature.png').next();
+        var sigs = { company_signature: companySigFile.getBlob(),
           recipient_signature: recipientSig };
         var made = Docs.makeSigned(rec, t, values, sigs, {
           title: t.title_en, number: rec.number, checkUrl: pages('check.html'),
@@ -372,15 +373,22 @@ var Api = (function () {
         return { rec: rec, made: made };
       });
       Store.log(out.rec.number, 'signed', out.rec.recipient_email, out.rec.sha256, c);
-      // both signed copies leave together, with the PDF encoded once
+      // one "Signed" e-mail to the recipient with the manager in copy: the PDF is encoded and sent once. The
+      // answer stays small (the recipient's phone fetches the PDF only if asked: recipient.download).
       var copy = { name: out.rec.number + ' signed.pdf', type: 'application/pdf', base64: out.made.base64 };
-      var to = [out.rec.recipient_email, out.rec.manager_email];
-      Mail.batch(to.map(function (addr) {
-        return Mail.msg.completed(out.rec, t, copy, addr, out.rec.manager_email, pages('check.html'));
-      })).forEach(function (r, i) {
-        if (r.error) Store.log(out.rec.number, 'notice failed', 'system', 'signed copy to ' + to[i] + ': ' + (r.error.code || r.error));
-      });
-      return { number: out.rec.number, pdf: out.made.base64 };
+      var mail = Mail.msg.completed(out.rec, t, copy, out.rec.recipient_email, out.rec.manager_email, pages('check.html'));
+      if (out.rec.manager_email !== out.rec.recipient_email) mail.opts.cc = out.rec.manager_email;
+      var sent = Mail.batch([mail])[0];
+      if (sent.error) Store.log(out.rec.number, 'notice failed', 'system', 'signed copies: ' + (sent.error.code || sent.error));
+      return { number: out.rec.number };
+    },
+    // The signed PDF for the recipient who has just signed (the ticket from their e-mail code, valid one hour).
+    'recipient.download': function (req) {
+      var rec = Store.findDoc(String(req.number || ''));
+      if (!rec) throw fail_('LINK_INVALID');
+      Auth.checkTicket(rec.number, req.ticket);
+      if (rec.status !== 'completed' || !rec.signed_pdf_id) throw fail_('BAD_STATE', { status: rec.status });
+      return { name: rec.number + ' signed.pdf', pdf: Docs.base64Of(rec.signed_pdf_id) };
     },
     'recipient.askNewLink': function (req) {
       var rec = openRec(req);

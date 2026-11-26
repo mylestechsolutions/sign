@@ -210,6 +210,7 @@ var SignCore = (function () {
     };
     var wrap = function (b64) { return String(b64).replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, ''); };
     var lines = ['From: ' + word(m.fromName) + ' <' + m.from + '>', 'To: ' + m.to];
+    if (m.cc) lines.push('Cc: ' + m.cc);
     if (m.replyTo) lines.push('Reply-To: ' + m.replyTo);
     lines.push('Subject: ' + word(m.subject), 'MIME-Version: 1.0',
       'Content-Type: multipart/mixed; boundary="' + mixed + '"', '',
