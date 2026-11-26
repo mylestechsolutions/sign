@@ -3330,6 +3330,43 @@ The founder: "it should have dropdown for NDA, MOU etc".
 - **Tests:** the stand-in (Task 22) returns two templates (`NDA` and a two-field `MOU`) and the end-to-end test
   checks that choosing MOU shows its fields and that choosing NDA again restores the NDA's.
 
+## Amendment 3 (26 November 2026): the record of every document, and a notification at every step
+
+The founder: "make sure track record of all MOU, NDA etc can be kept and downloaded" and "notifications flow when
+docs are sent to users to sign and so on".
+
+**The record.** Nothing is ever deleted: every document keeps its row, its folder (the sent PDF, the signed PDF,
+both signature images) and every step in `log`.
+
+- `documents.history {session, number}` (new): the steps of one document (time, step, who, detail), shown in the
+  console as a timeline under each document.
+- `documents.export {session, type}` (new): one ZIP (`Utilities.zip`) holding `register.csv` (one line per document:
+  number, type, status, recipient, manager, sent, signed, expires, fingerprint), `history.csv` (every step) and
+  `signed/<number> signed.pdf` for each signed document. A manager gets what they sent, the owner everything;
+  `type` limits it to one document type. Above about 400 signed documents the ZIP is cut by year
+  (`year` parameter) to stay under the web app's response size.
+- Console: a type filter beside the search (All, NDA, MOU, ...) and a white "Download record" button
+  (`console.export`) that downloads the ZIP for the current filter.
+
+**Notifications.** Every step tells the person it concerns, by e-mail through SES, and the console shows it:
+
+| Step | E-mail to | What it says |
+| --- | --- | --- |
+| Sent | recipient | the invitation with the link |
+| Sent | manager | "Sent to ..., link valid until ..." |
+| Opened (first code confirmed) | manager | "... opened the document" |
+| Reminder (day 3) | recipient | the invitation again, marked Reminder |
+| Signed | both | the signed PDF attached and the check page |
+| Withdrawn | recipient | "This document was withdrawn by Myles Tech Solutions" |
+| Resent | recipient | a new invitation (the old link stops working) |
+| Expired (day 30) | manager | "... did not sign; resend from the console" |
+| New link asked | manager | "... asks for a new link" |
+
+- `Mail.notice(to, kind, rec, tpl)` (new) writes the manager and recipient notices; one function, the table above
+  as its cases. A notice that fails is written to `log` and does not stop the step it reports.
+- `activity.list {session, since}` (new): the latest 50 steps of the documents the manager may see. The console
+  shows them in an "Activity" card with a count of the steps since the last visit (time kept in the browser).
+
 ---
 
 ## Execution

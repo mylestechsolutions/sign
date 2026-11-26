@@ -22,6 +22,7 @@ its template. It is the company's own tool, independent of EduCore and C4, and c
 | E-mail | Amazon SES in the management account (domain `mylestechsolutionsllc.com`), from `sign@mylestechsolutionsllc.com`, replies to the manager (amendment of 26 November) |
 | Choosing a document | A dropdown of every template (NDA first, MOU when uploaded); the owner uploads new templates (amendment of 26 November) |
 | Cost | Nothing beyond accounts the company already has, plus SES at $0.10 per 1,000 e-mails |
+| Record and notifications | Every document's history kept and downloadable (one ZIP of the register, the history and the signed PDFs); an e-mail to the person concerned at every step, and an activity feed in the console (amendment of 26 November) |
 
 ## 1. How it works
 
