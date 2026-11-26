@@ -44,11 +44,38 @@ function SignaturePad(canvas) {
     empty = false;
     changed();
   }
+  // The PNG of the ink only, with a small margin: a signature placed in a document is then the size of the
+  // writing, not of the whole drawing box (a short typed name would otherwise shrink to a speck).
+  function trimmed() {
+    var w = canvas.width;
+    var h = canvas.height;
+    var data = ctx.getImageData(0, 0, w, h).data;
+    var minX = w, minY = h, maxX = -1, maxY = -1;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > 8) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return canvas.toDataURL('image/png');
+    var m = Math.round(8 * (window.devicePixelRatio || 1));
+    minX = Math.max(0, minX - m); minY = Math.max(0, minY - m);
+    maxX = Math.min(w - 1, maxX + m); maxY = Math.min(h - 1, maxY + m);
+    var out = document.createElement('canvas');
+    out.width = maxX - minX + 1;
+    out.height = maxY - minY + 1;
+    out.getContext('2d').drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
+  }
   setup();
   window.addEventListener('resize', function () { if (empty) setup(); });
   return {
     clear: clear, typed: typed,
-    png: function () { return canvas.toDataURL('image/png'); },
+    png: trimmed,
     isEmpty: function () { return empty; },
     onChange: function (f) { listeners.push(f); }
   };

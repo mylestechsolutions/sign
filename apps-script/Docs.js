@@ -4,7 +4,8 @@
 // underscores, as in the original document.
 var Docs = (function () {
   var BLANK = '____________________';
-  var SIGNATURE_WIDTH = 150;
+  var SIGNATURE_WIDTH = 160;
+  var SIGNATURE_MAX_HEIGHT = 56;
 
   function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
   function folder(id) { return DriveApp.getFolderById(id); }
@@ -36,7 +37,10 @@ var Docs = (function () {
     var at = start === 0 ? idx : idx + 1;
     var img = par.insertInlineImage(at, blob);
     var ratio = img.getHeight() / Math.max(1, img.getWidth());
-    img.setWidth(SIGNATURE_WIDTH).setHeight(Math.round(SIGNATURE_WIDTH * ratio));
+    var w = SIGNATURE_WIDTH;
+    var h = Math.round(w * ratio);
+    if (h > SIGNATURE_MAX_HEIGHT) { h = SIGNATURE_MAX_HEIGHT; w = Math.round(h / ratio); }
+    img.setWidth(w).setHeight(h);
     if (tail) par.insertText(at + 1, tail).setAttributes(tailAttrs);
   }
 
