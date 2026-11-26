@@ -135,3 +135,58 @@ test('sweepAction reminds once after 3 days and expires after 30', () => {
   assert.equal(C.sweepAction(doc, sent + 30 * C.DAY), 'expire');
   assert.equal(C.sweepAction(Object.assign({}, doc, { status: 'completed' }), sent + 40 * C.DAY), null);
 });
+
+test('formatUtc prints a readable UTC time', () => {
+  assert.equal(C.formatUtc(Date.UTC(2026, 10, 26, 9, 5)), '2026-11-26 09:05 UTC');
+});
+
+test('certificateRows names both signers, the code check and the fingerprint, in English and French', () => {
+  const rows = C.certificateRows({
+    title: 'Student Intern NDA', number: 'MT-NDA-2026-0001', agreementSha256: 'ab'.repeat(32),
+    checkUrl: 'https://mylestechsolutions.github.io/sign/check.html',
+    company: { name: 'A Manager', title: 'Director', email: 'm@example.org', signedAt: Date.UTC(2026, 10, 26, 8, 0) },
+    recipient: { name: 'Awa Ndi', email: 'awa@example.org', signedAt: Date.UTC(2026, 10, 26, 9, 5), place: 'Yaounde', ip: '' }
+  });
+  const text = rows.map((r) => r.join(' : ')).join('\n');
+  assert.match(text, /MT-NDA-2026-0001/);
+  assert.match(text, /Awa Ndi <awa@example.org>/);
+  assert.match(text, /2026-11-26 09:05 UTC/);
+  assert.match(text, /6-digit code/);
+  assert.match(text, /Signé par/);
+  assert.match(text, /not reported/);
+  assert.match(text, new RegExp('ab'.repeat(32)));
+});
+
+const nodeCrypto = require('node:crypto');
+const NODE = {
+  hmac: (key, text) => Array.from(nodeCrypto.createHmac('sha256', Buffer.from(key)).update(text, 'utf8').digest()),
+  sha256hex: (text) => nodeCrypto.createHash('sha256').update(text, 'utf8').digest('hex'),
+  bytes: (text) => Array.from(Buffer.from(text, 'utf8')),
+  b64: (text) => Buffer.from(text, 'utf8').toString('base64')
+};
+
+test('sigv4 signs an SES request exactly as botocore does', () => {
+  // expected value computed with botocore 1.38 SigV4Auth for the same request and the AWS documentation's example keys
+  const h = C.sigv4({ host: 'email.us-east-1.amazonaws.com', path: '/v2/email/outbound-emails', region: 'us-east-1',
+    service: 'ses', body: '{"a":1}', amzDate: '20261126T120000Z' },
+  { accessKey: 'AKIDEXAMPLE', secretKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY' }, NODE);
+  assert.equal(h['X-Amz-Date'], '20261126T120000Z');
+  assert.equal(h.Authorization, 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261126/us-east-1/ses/aws4_request, ' +
+    'SignedHeaders=host;x-amz-date, Signature=d64faed9e7a19c4e8440148bbbf19dfe36ae458ee1402d8d64ff4885f72a89a2');
+});
+
+test('mime builds an ASCII message with text, HTML and a PDF attachment', () => {
+  const raw = C.mime({ fromName: 'Myles Tech Solutions', from: 'sign@example.org', to: 'awa@example.org',
+    replyTo: 'm@example.org', subject: 'Signé: NDA', text: 'Bonjour Awa', html: '<p>Bonjour</p>',
+    attachments: [{ name: 'MT-NDA-2026-0001 signed.pdf', type: 'application/pdf', base64: Buffer.from('%PDF-1.4 x'.repeat(30)).toString('base64') }] },
+  'seed1', NODE);
+  assert.match(raw, /^From: Myles Tech Solutions <sign@example.org>\r\n/);
+  assert.match(raw, /\r\nReply-To: m@example.org\r\n/);
+  assert.match(raw, /\r\nSubject: =\?UTF-8\?B\?/);
+  assert.match(raw, /filename="MT-NDA-2026-0001 signed.pdf"/);
+  assert.ok(/^[\x00-\x7f]*$/.test(raw), 'only ASCII');
+  assert.ok(raw.split('\r\n').every((l) => l.length <= 998), 'no line over 998 characters');
+  const text = raw.split('Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n')[1].split('\r\n--')[0];
+  assert.equal(Buffer.from(text.replace(/\r\n/g, ''), 'base64').toString('utf8'), 'Bonjour Awa');
+  assert.match(raw, /--mixed_seed1--\r\n$/);
+});

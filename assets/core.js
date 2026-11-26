@@ -152,7 +152,85 @@ var SignCore = (function () {
     return null;
   }
 
+  function formatUtc(ms) {
+    var d = new Date(ms);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' ' +
+      p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ' UTC';
+  }
+
+  function certificateRows(c) {
+    return [
+      ['Document', c.title + ' (' + c.number + ')'],
+      ['Signed for the company by / Signé pour la société par',
+        c.company.name + ', ' + c.company.title + ' <' + c.company.email + '>'],
+      ['Company signature time / Heure de signature de la société', formatUtc(c.company.signedAt)],
+      ['Signed by / Signé par', c.recipient.name + ' <' + c.recipient.email + '>'],
+      ['Signature time / Heure de signature', formatUtc(c.recipient.signedAt)],
+      ['Place given / Lieu indiqué', c.recipient.place],
+      ['E-mail confirmed / Adresse confirmée',
+        'A 6-digit code sent to this address was entered before signing. / ' +
+        'Un code à 6 chiffres envoyé à cette adresse a été saisi avant la signature.'],
+      ['Internet address reported by the browser / Adresse internet déclarée par le navigateur',
+        c.recipient.ip || 'not reported / non déclarée'],
+      ['Fingerprint of the agreement pages (SHA-256) / Empreinte des pages de l\'accord', c.agreementSha256],
+      ['Check this document / Vérifier ce document', c.checkUrl]
+    ];
+  }
+
+  // AWS Signature Version 4 for a POST, signed on host and x-amz-date.
+  // req = { host, path, region, service, body, amzDate }; creds = { accessKey, secretKey };
+  // c = { hmac(keyBytes, text) -> bytes, sha256hex(text) -> hex, bytes(text) -> bytes }
+  function sigv4(req, creds, c) {
+    var day = req.amzDate.slice(0, 8);
+    var canonical = ['POST', req.path, '', 'host:' + req.host + '\nx-amz-date:' + req.amzDate + '\n',
+      'host;x-amz-date', c.sha256hex(req.body)].join('\n');
+    var scope = day + '/' + req.region + '/' + req.service + '/aws4_request';
+    var toSign = ['AWS4-HMAC-SHA256', req.amzDate, scope, c.sha256hex(canonical)].join('\n');
+    var key = c.hmac(c.bytes('AWS4' + creds.secretKey), day);
+    key = c.hmac(key, req.region);
+    key = c.hmac(key, req.service);
+    key = c.hmac(key, 'aws4_request');
+    return {
+      'X-Amz-Date': req.amzDate,
+      'Authorization': 'AWS4-HMAC-SHA256 Credential=' + creds.accessKey + '/' + scope +
+        ', SignedHeaders=host;x-amz-date, Signature=' + bytesToHex(c.hmac(key, toSign))
+    };
+  }
+
+  // A MIME message in ASCII only (every text part in base64): text and HTML alternatives, then attachments.
+  // m = { fromName, from, to, replyTo, subject, text, html, attachments: [{ name, type, base64 }] };
+  // c = { b64(text) -> base64 of its UTF-8 bytes }
+  function mime(m, seed, c) {
+    var mixed = 'mixed_' + seed;
+    var alt = 'alt_' + seed;
+    var word = function (s) {
+      var v = String(s == null ? '' : s).replace(/[\r\n]+/g, ' ');
+      return /^[\x20-\x7e]*$/.test(v) ? v : '=?UTF-8?B?' + c.b64(v) + '?=';
+    };
+    var wrap = function (b64) { return String(b64).replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, ''); };
+    var lines = ['From: ' + word(m.fromName) + ' <' + m.from + '>', 'To: ' + m.to];
+    if (m.replyTo) lines.push('Reply-To: ' + m.replyTo);
+    lines.push('Subject: ' + word(m.subject), 'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="' + mixed + '"', '',
+      '--' + mixed, 'Content-Type: multipart/alternative; boundary="' + alt + '"', '',
+      '--' + alt, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(c.b64(m.text)),
+      '--' + alt, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(c.b64(m.html)),
+      '--' + alt + '--');
+    (m.attachments || []).forEach(function (a) {
+      var name = String(a.name).replace(/[^\x20-\x7e]|"/g, '_');
+      lines.push('--' + mixed, 'Content-Type: ' + a.type + '; name="' + name + '"',
+        'Content-Disposition: attachment; filename="' + name + '"', 'Content-Transfer-Encoding: base64', '', wrap(a.base64));
+    });
+    lines.push('--' + mixed + '--', '');
+    return lines.join('\r\n');
+  }
+
   return {
+    formatUtc: formatUtc,
+    certificateRows: certificateRows,
+    sigv4: sigv4,
+    mime: mime,
     documentNumber: documentNumber,
     codeFromHex: codeFromHex,
     bytesToHex: bytesToHex,
