@@ -39,30 +39,61 @@ var Mail = (function () {
       '</div><p style="text-align:center;font-size:12px;color:#5F6B82;margin-top:16px">' + esc(ADDRESS) + '</p></div>';
   }
 
-  function send(to, subject, en, fr, button, opts) {
+  // A message is described as { to, subject, en, fr, button, opts } and turned into a signed SES request.
+  // Attachments are Blobs or ready { name, type, base64 } (a big PDF is then encoded once for every message).
+  function build(m) {
     var key = { accessKey: Store.prop('SES_ACCESS_KEY'), secretKey: Store.prop('SES_SECRET_KEY') };
     var from = Store.prop('MAIL_FROM');
     if (!key.accessKey || !key.secretKey || !from) throw fail_('MAIL_NOT_SET_UP');
-    var text = en.title + '\n\n' + en.lines.join('\n') + (button ? '\n\n' + button.url : '') +
-      '\n\n---\n' + fr.title + '\n\n' + fr.lines.join('\n');
-    var attachments = ((opts && opts.attachments) || []).map(function (b) {
+    var opts = m.opts || {};
+    var text = m.en.title + '\n\n' + m.en.lines.join('\n') + (m.button ? '\n\n' + m.button.url : '') +
+      '\n\n---\n' + m.fr.title + '\n\n' + m.fr.lines.join('\n');
+    var attachments = (opts.attachments || []).map(function (b) {
+      if (b.base64) return b;
       return { name: b.getName(), type: b.getContentType() || 'application/pdf', base64: Utilities.base64Encode(b.getBytes()) };
     });
-    var raw = SignCore.mime({ fromName: NAME, from: from, to: to, replyTo: opts && opts.replyTo, subject: subject,
-      text: text, html: page(en, fr, button), attachments: attachments }, Utilities.getUuid().replace(/-/g, ''), CRYPTO);
-    var body = JSON.stringify({ FromEmailAddress: from, Destination: { ToAddresses: [to] },
+    var raw = SignCore.mime({ fromName: NAME, from: from, to: m.to, replyTo: opts.replyTo, subject: m.subject,
+      text: text, html: page(m.en, m.fr, m.button), attachments: attachments }, Utilities.getUuid().replace(/-/g, ''), CRYPTO);
+    var body = JSON.stringify({ FromEmailAddress: from, Destination: { ToAddresses: [m.to] },
       Content: { Raw: { Data: Utilities.base64Encode(raw) } } });
     var amzDate = Utilities.formatDate(new Date(), 'UTC', "yyyyMMdd'T'HHmmss'Z'");
     var headers = SignCore.sigv4({ host: HOST, path: PATH, region: 'us-east-1', service: 'ses', body: body, amzDate: amzDate },
       key, CRYPTO);
-    var res = UrlFetchApp.fetch('https://' + HOST + PATH, { method: 'post', contentType: 'application/json', payload: body,
-      headers: headers, muteHttpExceptions: true });
-    var status = res.getResponseCode();
-    if (status !== 200) {
-      console.error('SES ' + status + ': ' + res.getContentText().slice(0, 300));
-      throw fail_(status === 429 ? 'MAIL_LIMIT' : 'MAIL_FAILED');
+    return { url: 'https://' + HOST + PATH, method: 'post', contentType: 'application/json', payload: body,
+      headers: headers, muteHttpExceptions: true };
+  }
+
+  // Sends every message at the same time (UrlFetchApp.fetchAll). Returns one { id } or { error } per message, in
+  // order; never throws, so one failed notice cannot stop a step.
+  function batch(messages) {
+    var built = messages.map(function (m) { try { return { req: build(m) }; } catch (e) { return { error: e }; } });
+    var reqs = built.filter(function (b) { return b.req; }).map(function (b) { return b.req; });
+    var res = [];
+    if (reqs.length) {
+      try { res = UrlFetchApp.fetchAll(reqs); } catch (e) { res = reqs.map(function () { return null; }); }
     }
-    return JSON.parse(res.getContentText()).MessageId;
+    var k = 0;
+    return built.map(function (b) {
+      if (b.error) return { error: b.error };
+      var r = res[k++];
+      if (!r) return { error: fail_('MAIL_FAILED') };
+      var status = r.getResponseCode();
+      if (status !== 200) {
+        console.error('SES ' + status + ': ' + r.getContentText().slice(0, 300));
+        return { error: fail_(status === 429 ? 'MAIL_LIMIT' : 'MAIL_FAILED') };
+      }
+      return { id: JSON.parse(r.getContentText()).MessageId };
+    });
+  }
+
+  function deliver(m) {
+    var r = batch([m])[0];
+    if (r.error) throw r.error;
+    return r.id;
+  }
+
+  function send(to, subject, en, fr, button, opts) {
+    return deliver({ to: to, subject: subject, en: en, fr: fr, button: button, opts: opts });
   }
 
   function code(to, value) {
@@ -73,9 +104,13 @@ var Mail = (function () {
         'Si vous ne l\'avez pas demandé, ignorez ce message.'] });
   }
 
-  function invite(rec, tpl, link, replyTo, reminder) {
+  function msg(to, subject, en, fr, button, opts) {
+    return { to: to, subject: subject, en: en, fr: fr, button: button, opts: opts };
+  }
+
+  function inviteMsg(rec, tpl, link, replyTo, reminder) {
     var subject = (reminder ? 'Reminder: ' : '') + 'Please review and sign: ' + tpl.title_en + ' / ' + tpl.title_fr;
-    return send(rec.recipient_email, subject,
+    return msg(rec.recipient_email, subject,
       { title: (reminder ? 'Reminder: ' : '') + 'Please review and sign your ' + tpl.title_en,
         lines: ['Hello ' + rec.recipient_name + ',',
           'Myles Tech Solutions SARL has prepared and signed this document for you (' + rec.number + ').',
@@ -89,8 +124,8 @@ var Mail = (function () {
       { url: link, label: 'Review and sign / Lire et signer' }, { replyTo: replyTo });
   }
 
-  function completed(rec, tpl, blob, to, replyTo, checkUrl) {
-    return send(to, 'Signed: ' + tpl.title_en + ' (' + rec.number + ')',
+  function completedMsg(rec, tpl, blob, to, replyTo, checkUrl) {
+    return msg(to, 'Signed: ' + tpl.title_en + ' (' + rec.number + ')',
       { title: 'Signed by both sides', lines: [tpl.title_en + ' (' + rec.number + ') is signed. Your copy is attached.',
         'To check that a copy is genuine and unchanged, drop it on ' + checkUrl + '.'] },
       { title: 'Signé par les deux parties', lines: [tpl.title_fr + ' (' + rec.number + ') est signé. Votre copie est jointe.',
@@ -99,7 +134,7 @@ var Mail = (function () {
   }
 
   // The other steps of the notification table (design, amendment 3).
-  function notice(to, kind, rec, tpl, consoleUrl, replyTo) {
+  function noticeMsg(to, kind, rec, tpl, consoleUrl, replyTo) {
     var who = rec.recipient_name + ' <' + rec.recipient_email + '>';
     var T = {
       sent: ['Sent: ' + rec.number, { title: 'Sent to ' + rec.recipient_name, lines: [tpl.title_en + ' (' + rec.number + ') went to ' + who + '.',
@@ -117,7 +152,7 @@ var Mail = (function () {
     }[kind];
     if (!T) throw fail_('UNKNOWN_NOTICE');
     var button = kind === 'withdrawn' ? null : { url: consoleUrl, label: 'Open the console / Ouvrir la console' };
-    return send(to, T[0], T[1], T[2], button, { replyTo: replyTo });
+    return msg(to, T[0], T[1], T[2], button, { replyTo: replyTo });
   }
 
   // A test message to SES's own simulator mailbox: proves the key, the policy and the signing.
@@ -127,5 +162,10 @@ var Mail = (function () {
       { title: 'Vérification', lines: ['Ce message prouve que l\'outil peut envoyer par Amazon SES.'] });
   }
 
-  return { code: code, invite: invite, completed: completed, notice: notice, test: test };
+  function invite() { return deliver(inviteMsg.apply(null, arguments)); }
+  function completed() { return deliver(completedMsg.apply(null, arguments)); }
+  function notice() { return deliver(noticeMsg.apply(null, arguments)); }
+
+  return { code: code, invite: invite, completed: completed, notice: notice, test: test, batch: batch,
+    msg: { invite: inviteMsg, completed: completedMsg, notice: noticeMsg } };
 })();

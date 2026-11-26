@@ -50,6 +50,18 @@ var Http = (function () {
     for (var i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
     return btoa(bin);
   }
+  // Shows a spinner on the button and ignores further clicks while fn runs.
+  async function busy(button, fn) {
+    if (!button || button.classList.contains('busy')) return undefined;
+    button.classList.add('busy');
+    button.setAttribute('aria-busy', 'true');
+    try { return await fn(); } finally { button.classList.remove('busy'); button.removeAttribute('aria-busy'); }
+  }
+  // Wakes the back end while the page is being read, so the first real click does not pay the start-up.
+  function warm() {
+    if (!backend() || backend().indexOf('DEPLOYMENT_ID') >= 0) return;
+    fetch(backend(), { mode: 'no-cors' }).catch(function () { /* only a wake-up */ });
+  }
   function toast(message) {
     var el = document.createElement('div');
     el.className = 'toast';
@@ -60,5 +72,6 @@ var Http = (function () {
     document.body.appendChild(el);
     setTimeout(function () { el.remove(); }, 7000);
   }
-  return { call: call, reportedIp: reportedIp, bytes: bytes, download: download, fileBase64: fileBase64, toast: toast };
+  return { call: call, reportedIp: reportedIp, bytes: bytes, download: download, fileBase64: fileBase64, toast: toast,
+    busy: busy, warm: warm };
 })();

@@ -10,6 +10,7 @@ function bi(el, en, fr) { el.dataset.en = en; el.dataset.fr = fr; el.textContent
 function message(key, text) { show('s-message'); $('#s-message-text').textContent = text || Lang.t(key); }
 
 async function boot() {
+  Http.warm();
   Lang.menu($('#lang'));
   Lang.apply();
   document.addEventListener('langchange', () => Lang.apply());
@@ -41,19 +42,19 @@ function expired() {
 function codeStep(info) {
   show('s-code');
   if (info.sentTo) $('#s-code-lead').textContent = Lang.t('sign.code.lead', { email: info.sentTo });
-  $('#s-send').onclick = async () => {
+  $('#s-send').onclick = () => Http.busy($('#s-send'), async () => {
     $('#s-code-error').textContent = '';
     try { await Http.call('recipient.requestCode', { number, secret }); $('#s-code-2').classList.remove('hidden'); $('#s-code-input').focus(); }
     catch (e) { $('#s-code-error').textContent = e.message; }
-  };
-  $('#s-open').onclick = async () => {
+  });
+  $('#s-open').onclick = () => Http.busy($('#s-open'), async () => {
     $('#s-code-error').textContent = '';
     try {
       const r = await Http.call('recipient.verifyCode', { number, secret, code: $('#s-code-input').value });
       st.ticket = r.ticket;
       await docStep(r);
     } catch (e) { $('#s-code-error').textContent = e.message; }
-  };
+  });
 }
 
 function values() {
@@ -104,20 +105,22 @@ async function docStep(r) {
   await showPdf($('#s-pages'), Http.bytes(r.pdf));
 }
 
-async function sign() {
-  $('#s-error').textContent = '';
-  $('#s-sign').disabled = true;
-  try {
-    const r = await Http.call('recipient.sign',
-      { number, secret, ticket: st.ticket, values: values(), signature: st.pad.png(), agree: $('#s-agree').checked },
-      { browser: navigator.userAgent, ip: st.ip });
-    show('s-done');
-    $('#s-download').onclick = () => Http.download(r.pdf, number + ' signed.pdf');
-  } catch (e) {
-    if (e.code === 'CODE_AGAIN') { codeStep({ sentTo: '' }); return; }
-    $('#s-error').textContent = e.message;
-    $('#s-sign').disabled = false;
-  }
+function sign() {
+  return Http.busy($('#s-sign'), async () => {
+    $('#s-error').textContent = '';
+    $('#s-why').textContent = Lang.t('sign.signing');
+    try {
+      const r = await Http.call('recipient.sign',
+        { number, secret, ticket: st.ticket, values: values(), signature: st.pad.png(), agree: $('#s-agree').checked },
+        { browser: navigator.userAgent, ip: st.ip });
+      show('s-done');
+      $('#s-download').onclick = () => Http.download(r.pdf, number + ' signed.pdf');
+    } catch (e) {
+      $('#s-why').textContent = '';
+      if (e.code === 'CODE_AGAIN') { codeStep({ sentTo: '' }); return; }
+      $('#s-error').textContent = e.message;
+    }
+  });
 }
 
 boot();

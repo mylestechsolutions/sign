@@ -55,6 +55,18 @@ test('a manager picks the NDA, sends it, the intern signs it, the check page kno
     assert.equal(await page.isDisabled('#c-send'), false, 'still waiting for: ' + await page.textContent('#c-why'));
     await page.click('#c-send');
     await page.waitForSelector('.row .badge.sent');
+    assert.equal(await page.locator('.row.pending').count(), 0, 'the "Sending" row goes once the send is done');
+
+    // Withdraw and Resend ask first; Cancel changes nothing
+    for (const label of ['Withdraw', 'Resend']) {
+      await page.click(`.row .pill:has-text("${label}")`);
+      await page.waitForSelector('#confirm[open]');
+      assert.match(await page.textContent('#confirm-text'), label === 'Withdraw' ? /Withdraw this document\?/ : /new link\?/);
+      await page.click('#confirm-no');
+      await page.waitForSelector('#confirm', { state: 'hidden' });
+    }
+    assert.equal(await page.locator('.row .badge.sent').count(), 1, 'cancelled: the document is still sent');
+    assert.equal(srv.outbox().filter((m) => m.to === 'intern@test.local').length, 1, 'cancelled: no second link went out');
 
     const intern = await browser.newPage({ viewport: { width: 390, height: 900 } });
     await prepare(intern);

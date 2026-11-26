@@ -1,7 +1,9 @@
 import { showPdf } from './pdfview.js';
 
 const $ = (s) => document.querySelector(s);
-const state = { session: localStorage.getItem('mts.session') || '', me: null, templates: [], pad: null, typeMode: false };
+const state = { session: localStorage.getItem('mts.session') || '', me: null, templates: [], pad: null, typeMode: false,
+  pending: [], draft: null };
+const HOME = 'mts.home';  // the last start screen, shown at once on the next visit, then refreshed
 const VIEWS = ['signin', 'home', 'compose', 'managers'];
 
 function show(id) { VIEWS.forEach((v) => $('#' + v).classList.toggle('hidden', v !== id)); }
@@ -10,11 +12,15 @@ function errorIn(sel, e) { $(sel).textContent = e ? e.message : ''; }
 function titleOf(t) { return Lang.get() === 'fr' ? t.title_fr : t.title_en; }
 function when(iso) { return iso ? SignCore.formatUtc(Date.parse(iso)) : ''; }
 
+function cachedHome() { try { return JSON.parse(localStorage.getItem(HOME) || 'null'); } catch (e) { return null; } }
+function saveHome(h) { try { localStorage.setItem(HOME, JSON.stringify(h)); } catch (e) { /* storage full: no shortcut next time */ } }
+function forget() { localStorage.removeItem('mts.session'); localStorage.removeItem(HOME); state.session = ''; state.templates = []; }
+
 async function call(action, payload) {
   try {
     return await Http.call(action, Object.assign({ session: state.session }, payload || {}));
   } catch (e) {
-    if (e.code === 'SIGN_IN') { localStorage.removeItem('mts.session'); state.session = ''; renderSignin(); }
+    if (e.code === 'SIGN_IN') { forget(); renderSignin(); }
     throw e;
   }
 }
@@ -25,10 +31,11 @@ async function templates() {
 }
 
 function closeOnX(dialog) { dialog.querySelector('.x').onclick = () => dialog.close(); }
-function confirmBox(text, okLabel) {
+function confirmBox(text, okLabel, tone) {
   const d = $('#confirm');
   $('#confirm-text').textContent = text;
   $('#confirm-ok').textContent = okLabel;
+  $('#confirm-ok').className = 'pill ' + (tone || 'red');
   $('#confirm-no').textContent = Lang.get() === 'fr' ? 'Annuler' : 'Cancel';
   return new Promise((resolve) => {
     $('#confirm-ok').onclick = () => { d.close(); resolve(true); };
@@ -52,19 +59,20 @@ function renderSignin() {
     </div>
     <p class="error" id="si-error"></p>`;
   Lang.apply($('#signin'));
-  $('#si-send').onclick = async () => {
+  $('#si-send').onclick = () => Http.busy($('#si-send'), async () => {
     errorIn('#si-error');
     try { await Http.call('manager.requestCode', { email: $('#si-email').value }); $('#si-step2').classList.remove('hidden'); $('#si-code').focus(); }
     catch (e) { errorIn('#si-error', e); }
-  };
-  $('#si-go').onclick = async () => {
+  });
+  $('#si-go').onclick = () => Http.busy($('#si-go'), async () => {
     errorIn('#si-error');
     try {
       const r = await Http.call('manager.verifyCode', { email: $('#si-email').value, code: $('#si-code').value });
+      localStorage.removeItem(HOME);
       state.session = r.session; state.me = r.me; localStorage.setItem('mts.session', r.session);
       renderHome();
     } catch (e) { errorIn('#si-error', e); }
-  };
+  });
 }
 
 async function renderHome() {
@@ -90,55 +98,108 @@ async function renderHome() {
       <ul class="feed" id="h-feed" style="margin-top:12px"></ul></details>`;
   Lang.apply($('#home'));
   if (matchMedia('(max-width: 640px)').matches) $('#h-activity').open = false;
-  const tpls = await templates();
   const sel = $('#h-type');
   sel.innerHTML = `<option value="">${Lang.t('console.allTypes')}</option>`;
-  tpls.forEach((t) => { const o = document.createElement('option'); o.value = t.code; bi(o, t.title_en, t.title_fr); sel.appendChild(o); });
   $('#h-new').onclick = renderCompose;
-  if (owner) $('#h-managers').onclick = renderManagers;
-  $('#h-out').onclick = async () => { try { await call('manager.signOut'); } catch (e) { /* signed out anyway */ }
-    localStorage.removeItem('mts.session'); state.session = ''; renderSignin(); };
-  $('#h-export').onclick = async () => {
+  if (owner) $('#h-managers').onclick = () => Http.busy($('#h-managers'), renderManagers);
+  $('#h-out').onclick = () => Http.busy($('#h-out'), async () => {
+    try { await call('manager.signOut'); } catch (e) { /* signed out anyway */ }
+    forget(); renderSignin();
+  });
+  $('#h-export').onclick = () => Http.busy($('#h-export'), async () => {
     try {
       const r = await call('documents.export', { type: sel.value });
       Http.download(r.zip, r.name, 'application/zip');
       Http.toast(Lang.t('console.exported', { n: r.documents }));
     } catch (e) { Http.toast(e.message); }
-  };
+  });
   let timer;
   const reload = () => { clearTimeout(timer); timer = setTimeout(() => loadList(), 300); };
   $('#h-q').oninput = reload;
   sel.onchange = () => loadList();
-  await Promise.all([loadList(), loadActivity()]);
+  const cached = cachedHome();
+  if (cached) paintHome(cached, false);
+  else $('#h-list').innerHTML = `<p class="loading">${Lang.t('busy.loading')}</p>`;
+  await refreshHome();
+}
+
+// The whole start screen in one request, painted over what was shown from memory.
+async function refreshHome() {
+  if ($('#home').classList.contains('hidden') || !state.session) return;
+  const filtered = $('#h-q').value || $('#h-type').value;
+  try {
+    const h = await call('console.home', { since: localStorage.getItem('mts.seen') || '', query: $('#h-q').value, type: $('#h-type').value });
+    if (!filtered) saveHome(h);
+    if (!$('#home').classList.contains('hidden')) paintHome(h, true);
+  } catch (e) { if (e.code !== 'SIGN_IN') Http.toast(e.message); }
+}
+
+function paintHome(h, fresh) {
+  state.me = h.me || state.me;
+  state.templates = h.templates || state.templates;
+  const sel = $('#h-type');
+  const chosen = sel.value;
+  sel.innerHTML = `<option value="">${Lang.t('console.allTypes')}</option>`;
+  state.templates.forEach((t) => { const o = document.createElement('option'); o.value = t.code; bi(o, t.title_en, t.title_fr); sel.appendChild(o); });
+  sel.value = chosen;
+  renderRows(h.documents || []);
+  const feed = $('#h-feed');
+  feed.innerHTML = '';
+  const a = h.activity || { items: [], fresh: 0 };
+  a.items.forEach((i) => feed.appendChild(feedItem(i.time, i.number + ' · ' + Lang.event(i.event) + (i.actor ? ' · ' + i.actor : ''))));
+  $('#h-fresh').classList.toggle('hidden', !(fresh && a.fresh));
+  if (fresh && a.fresh) $('#h-fresh').textContent = Lang.t('console.fresh', { n: a.fresh });
+  if (fresh && a.items[0]) localStorage.setItem('mts.seen', a.items[0].time);
 }
 
 async function loadList() {
+  try { renderRows(await call('documents.list', { query: $('#h-q').value, type: $('#h-type').value })); }
+  catch (e) { if (e.code !== 'SIGN_IN') Http.toast(e.message); }
+}
+
+// Documents still being sent from this page come first, marked "Sending".
+function renderRows(rows) {
   const list = $('#h-list');
-  const rows = await call('documents.list', { query: $('#h-q').value, type: $('#h-type').value });
-  list.innerHTML = rows.length ? '' : `<p class="muted">${Lang.t('console.empty')}</p>`;
+  const pending = state.pending.map((p) => ({ pending: true, number: '', template: p.template, status: 'sending',
+    recipient_name: p.name, recipient_email: p.email }));
+  const all = pending.concat(rows);
+  list.innerHTML = all.length ? '' : `<p class="muted">${Lang.t('console.empty')}</p>`;
   const tpls = state.templates;
-  rows.forEach((r) => {
+  all.forEach((r) => {
     const el = document.createElement('div');
-    el.className = 'row';
+    el.className = 'row' + (r.pending ? ' pending' : '');
     el.innerHTML = `<div><strong></strong><div class="muted"></div></div>
       <div class="actions" style="margin:0"><span class="badge ${r.status}"></span></div>`;
     const t = tpls.find((x) => x.code === r.template);
-    el.querySelector('strong').textContent = r.recipient_name + ' (' + r.number + ')';
-    el.querySelector('.muted').textContent = (t ? titleOf(t) + ' · ' : '') + r.recipient_email + ' · ' + (r.completed_at || r.sent_at).slice(0, 10);
+    el.querySelector('strong').textContent = r.recipient_name + (r.number ? ' (' + r.number + ')' : '');
+    el.querySelector('.muted').textContent = (t ? titleOf(t) + ' · ' : '') + r.recipient_email +
+      (r.pending ? '' : ' · ' + (r.completed_at || r.sent_at).slice(0, 10));
     el.querySelector('.badge').textContent = Lang.t('status.' + r.status);
-    const acts = el.querySelector('.actions');
-    const btn = (key, cls, fn) => { const b = document.createElement('button'); b.className = 'pill small ' + cls;
-      b.textContent = Lang.t(key); b.onclick = fn; acts.appendChild(b); };
-    btn('doc.download', '', async () => { try { const d = await call('documents.download', { number: r.number }); Http.download(d.pdf, d.name); } catch (e) { Http.toast(e.message); } });
-    btn('doc.history', '', () => openHistory(r));
-    if (['sent', 'opened', 'expired'].includes(r.status)) {
-      btn('doc.resend', '', async () => { try { await call('documents.resend', { number: r.number }); Http.toast(Lang.t('new.sent', { number: r.number })); loadList(); } catch (e) { Http.toast(e.message); } });
-    }
-    if (['sent', 'opened'].includes(r.status)) {
-      btn('doc.withdraw', 'red', async () => {
-        if (!(await confirmBox(Lang.t('doc.confirmWithdraw'), Lang.t('doc.withdraw')))) return;
-        try { await call('documents.withdraw', { number: r.number }); loadList(); } catch (e) { Http.toast(e.message); }
-      });
+    if (!r.pending) {
+      const acts = el.querySelector('.actions');
+      const btn = (key, cls, fn) => { const b = document.createElement('button'); b.className = 'pill small ' + cls;
+        b.textContent = Lang.t(key); b.onclick = () => fn(b); acts.appendChild(b); };
+      btn('doc.download', '', (b) => Http.busy(b, async () => {
+        try { const d = await call('documents.download', { number: r.number }); Http.download(d.pdf, d.name); } catch (e) { Http.toast(e.message); }
+      }));
+      btn('doc.history', '', () => openHistory(r));
+      if (['sent', 'opened', 'expired'].includes(r.status)) {
+        btn('doc.resend', '', async (b) => {
+          if (!(await confirmBox(Lang.t('doc.confirmResend', { name: r.recipient_name }), Lang.t('doc.resend'), 'blue'))) return;
+          await Http.busy(b, async () => {
+            try { await call('documents.resend', { number: r.number }); Http.toast(Lang.t('new.sent', { number: r.number })); loadList(); }
+            catch (e) { Http.toast(e.message); }
+          });
+        });
+      }
+      if (['sent', 'opened'].includes(r.status)) {
+        btn('doc.withdraw', 'red', async (b) => {
+          if (!(await confirmBox(Lang.t('doc.confirmWithdraw'), Lang.t('doc.withdraw')))) return;
+          await Http.busy(b, async () => {
+            try { await call('documents.withdraw', { number: r.number }); loadList(); } catch (e) { Http.toast(e.message); }
+          });
+        });
+      }
     }
     list.appendChild(el);
   });
@@ -157,22 +218,13 @@ async function openHistory(r) {
   closeOnX(d);
   $('#history-title').textContent = r.recipient_name + ' (' + r.number + ')';
   const list = $('#history-list');
-  list.innerHTML = '';
+  list.innerHTML = `<p class="loading">${Lang.t('busy.loading')}</p>`;
   d.showModal();
   try {
     const steps = await call('documents.history', { number: r.number });
+    list.innerHTML = '';
     steps.forEach((s) => list.appendChild(feedItem(s.time, Lang.event(s.event) + (s.actor ? ' · ' + s.actor : ''))));
-  } catch (e) { list.appendChild(feedItem('', e.message)); }
-}
-
-async function loadActivity() {
-  const since = localStorage.getItem('mts.seen') || '';
-  const r = await call('activity.list', { since });
-  const feed = $('#h-feed');
-  feed.innerHTML = '';
-  r.items.forEach((i) => feed.appendChild(feedItem(i.time, i.number + ' · ' + Lang.event(i.event) + (i.actor ? ' · ' + i.actor : ''))));
-  if (r.fresh) { $('#h-fresh').textContent = Lang.t('console.fresh', { n: r.fresh }); $('#h-fresh').classList.remove('hidden'); }
-  if (r.items[0]) localStorage.setItem('mts.seen', r.items[0].time);
+  } catch (e) { list.innerHTML = ''; list.appendChild(feedItem('', e.message)); }
 }
 
 function inputFor(f, value) {
@@ -218,7 +270,8 @@ async function renderCompose() {
       <p class="why" id="c-why"></p><p class="error" id="c-error"></p></div>`;
   const sel = $('#c-type');
   tpls.forEach((t) => { const o = document.createElement('option'); o.value = t.code; bi(o, t.title_en, t.title_fr); sel.appendChild(o); });
-  sel.value = tpls.some((t) => t.code === 'NDA') ? 'NDA' : (tpls[0] && tpls[0].code);
+  sel.value = state.draft && tpls.some((t) => t.code === state.draft.template) ? state.draft.template
+    : tpls.some((t) => t.code === 'NDA') ? 'NDA' : (tpls[0] && tpls[0].code);
   Lang.apply($('#compose'));
   if (matchMedia('(max-width: 640px)').matches) $('#compose details.fold').open = false;
   state.pad = SignaturePad($('#c-pad'));
@@ -245,7 +298,7 @@ async function renderCompose() {
     $('#c-preview').disabled = need.length > 0;
     $('#c-why').textContent = need.length ? Lang.t('need', { list: need.join(', ') }) : '';
   };
-  fieldsFor({});
+  fieldsFor(state.draft && state.draft.template === sel.value ? state.draft.values : {});
   sel.onchange = () => { fieldsFor(collect($('#compose'))); update(); };
   $('#compose').addEventListener('input', update);
   $('#c-saved').onchange = update;
@@ -261,27 +314,35 @@ async function renderCompose() {
   $('#c-close').onclick = renderHome;
   const payload = () => ({ template: sel.value, values: collect($('#compose')),
     signature: usingSaved() ? '' : state.pad.png(), saveSignature: !usingSaved() && $('#c-remember').checked });
-  $('#c-preview').onclick = async () => {
+  $('#c-preview').onclick = () => Http.busy($('#c-preview'), async () => {
     errorIn('#c-error');
+    const d = $('#viewer'); closeOnX(d);
+    $('#viewer-pages').innerHTML = `<p class="loading">${Lang.t('busy.preview')}</p>`;
+    d.showModal();
     try {
       const r = await call('documents.preview', payload());
-      const d = $('#viewer'); closeOnX(d); d.showModal();
-      await showPdf($('#viewer-pages'), Http.bytes(r.pdf));
-    } catch (e) { errorIn('#c-error', e); }
-  };
-  $('#c-send').onclick = async () => {
+      if (d.open) await showPdf($('#viewer-pages'), Http.bytes(r.pdf));
+    } catch (e) { d.close(); errorIn('#c-error', e); }
+  });
+  // Sign and send returns to the list at once with the document marked "Sending"; the server finishes in the
+  // background (about 6 s) and the list then shows its number. If it fails, the entries stay in New document.
+  $('#c-send').onclick = () => {
     errorIn('#c-error');
-    $('#c-send').disabled = true;
-    try {
-      const p = payload();
-      const r = await call('documents.send', p);
-      const name = p.values.company_signatory_name, title = p.values.company_signatory_title;
-      if ((name && name !== state.me.name) || (title && title !== state.me.title) || p.saveSignature) {
-        state.me = await call('manager.saveProfile', { name: name || state.me.name, title: title || state.me.title });
-      }
+    const p = payload();
+    const job = { template: p.template, name: p.values.recipient_name, email: p.values.recipient_email };
+    state.draft = { template: p.template, values: p.values };
+    state.pending.push(job);
+    renderHome();
+    call('documents.send', p).then((r) => {
+      state.draft = null;
+      if (r.me) state.me = r.me;
       Http.toast(Lang.t('new.sent', { number: r.number }));
-      renderHome();
-    } catch (e) { errorIn('#c-error', e); update(); }
+    }).catch((e) => {
+      if (e.code !== 'SIGN_IN') Http.toast(Lang.t('new.failed', { reason: e.message }));
+    }).finally(() => {
+      state.pending = state.pending.filter((x) => x !== job);
+      refreshHome();
+    });
   };
   update();
 }
@@ -318,7 +379,10 @@ async function renderManagers() {
       const b = document.createElement('button');
       b.className = 'pill small red';
       b.textContent = Lang.t('managers.remove');
-      b.onclick = async () => { try { await call('managers.remove', { email: m.email }); renderManagers(); } catch (e) { errorIn('#m-error', e); } };
+      b.onclick = async () => {
+        if (!(await confirmBox(Lang.t('managers.confirmRemove', { email: m.email }), Lang.t('managers.remove')))) return;
+        await Http.busy(b, async () => { try { await call('managers.remove', { email: m.email }); await renderManagers(); } catch (e) { errorIn('#m-error', e); } });
+      };
       el.appendChild(b);
     }
     $('#m-list').appendChild(el);
@@ -331,11 +395,11 @@ async function renderManagers() {
     el.querySelector('.muted').textContent = t.code + ' · ' + t.fields.length + ' fields';
     $('#t-list').appendChild(el);
   });
-  $('#m-add').onclick = async () => {
-    try { await call('managers.add', { email: $('#m-email').value, name: $('#m-name').value, title: $('#m-title').value }); renderManagers(); }
+  $('#m-add').onclick = () => Http.busy($('#m-add'), async () => {
+    try { await call('managers.add', { email: $('#m-email').value, name: $('#m-name').value, title: $('#m-title').value }); await renderManagers(); }
     catch (e) { errorIn('#m-error', e); }
-  };
-  $('#t-upload').onclick = async () => {
+  });
+  $('#t-upload').onclick = () => Http.busy($('#t-upload'), async () => {
     errorIn('#t-error');
     const file = $('#t-file').files[0];
     if (!file) { errorIn('#t-error', { message: Lang.t('templates.file') }); return; }
@@ -344,9 +408,10 @@ async function renderManagers() {
         title_en: $('#t-en').value, title_fr: $('#t-fr').value });
       Http.toast(Lang.t('templates.done', { code: r.code, n: r.fields.length }));
       state.templates = [];
-      renderManagers();
+      localStorage.removeItem(HOME);
+      await renderManagers();
     } catch (e) { errorIn('#t-error', e); }
-  };
+  });
   $('#m-close').onclick = renderHome;
 }
 
@@ -354,7 +419,10 @@ async function boot() {
   Lang.menu($('#lang'));
   Lang.apply();
   document.addEventListener('langchange', () => Lang.apply());
+  Http.warm();
   if (state.session) {
+    const cached = cachedHome();
+    if (cached && cached.me) { state.me = cached.me; state.templates = cached.templates || []; return renderHome(); }
     try { state.me = await call('manager.me'); return renderHome(); } catch (e) { /* sign in again */ }
   }
   renderSignin();

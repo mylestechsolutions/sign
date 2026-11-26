@@ -67,8 +67,11 @@ export async function start(port = 0) {
       s.docs.push(d);
       send(d.recipient_email, { link: s.url + '/sign.html#' + number + '.' + d.secret });
       step(number, 'sent', m.email);
-      return { number };
+      m.name = v.clean.company_signatory_name || m.name; m.title = v.clean.company_signatory_title || m.title;
+      return { number, me: Object.assign({ hasSignature: false }, m) };
     },
+    'console.home': (r) => ({ me: routes['manager.me'](r), templates: routes['templates.list'](r),
+      documents: routes['documents.list'](r), activity: routes['activity.list'](r) }),
     'documents.list': (r) => { manager(r.session); return s.docs.filter((d) => !r.type || d.template === r.type).map((d) => ({ number: d.number,
       template: d.template, status: d.status, recipient_name: d.recipient_name, recipient_email: d.recipient_email, sent_at: d.sent_at, completed_at: d.completed_at })); },
     'documents.history': (r) => { manager(r.session); return s.log.filter((l) => l.number === r.number).reverse(); },
@@ -126,6 +129,7 @@ export async function start(port = 0) {
   return {
     url: s.url,
     lastTo: (to) => s.outbox.filter((m) => m.to === to).slice(-1)[0],
+    outbox: () => s.outbox.slice(),
     signedPdf: (number) => s.docs.find((d) => d.number === number).signed,
     stop: () => new Promise((ok) => server.close(ok))
   };

@@ -84,12 +84,20 @@ function setup() {
   }
   if (!Store.template(NDA_TEMPLATE.code)) installNda_();
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'dailySweep') ScriptApp.deleteTrigger(t);
+    var h = t.getHandlerFunction();
+    if (h === 'dailySweep' || h === 'refillPool') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailySweep').timeBased().everyDays(1).atHour(8).create();
-  var report = secrets + '\n' + selfTest();
+  ScriptApp.newTrigger('refillPool').timeBased().everyMinutes(10).create();
+  var report = secrets + '\n' + selfTest() + '\n' + refillPool();
   console.log(report);
   return report;
+}
+
+// Every 10 minutes: keeps ready copies of each template so that a preview, a send or a signature never waits
+// for the 2.5 s copy, and bins the used ones (Docs.refill).
+function refillPool() {
+  return Docs.refill();
 }
 
 function selfTest() {

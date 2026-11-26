@@ -78,6 +78,33 @@ var Api = (function () {
     return rec;
   }
 
+  function templatesOut() {
+    return Store.templates().map(function (t) {
+      return { code: t.code, title_en: t.title_en, title_fr: t.title_fr, fields: JSON.parse(t.fields_json) };
+    });
+  }
+
+  function listOf(m, query, kind) {
+    var q = SignCore.sanitizeValue(query, 100).toLowerCase();
+    var type = SignCore.sanitizeValue(kind, 8);
+    return visible(m).filter(function (r) {
+      if (type && r.template !== type) return false;
+      return !q || [r.number, r.recipient_name, r.recipient_email, r.status].join(' ').toLowerCase().indexOf(q) >= 0;
+    }).map(function (r) {
+      return { number: r.number, template: r.template, status: r.status, recipient_name: r.recipient_name,
+        recipient_email: r.recipient_email, manager_email: r.manager_email, sent_at: r.sent_at,
+        completed_at: r.completed_at, expires_at: r.expires_at };
+    }).sort(function (a, b) { return a.sent_at < b.sent_at ? 1 : -1; });
+  }
+
+  function activityOf(m, sinceRaw) {
+    var set = {};
+    visible(m).forEach(function (d) { set[d.number] = true; });
+    var since = String(sinceRaw || '');
+    var items = Store.steps(set, 50).map(function (s) { return { time: s.time, number: s.number, event: s.event, actor: s.actor }; });
+    return { items: items, fresh: items.filter(function (i) { return since && i.time > since; }).length };
+  }
+
   function csv(rows, cols) {
     var cell = function (v) {
       var s = String(v == null ? '' : v);
@@ -115,9 +142,12 @@ var Api = (function () {
     },
     'templates.list': function (req) {
       Auth.manager(req.session);
-      return Store.templates().map(function (t) {
-        return { code: t.code, title_en: t.title_en, title_fr: t.title_fr, fields: JSON.parse(t.fields_json) };
-      });
+      return templatesOut();
+    },
+    // Everything the console's first screen needs, in one request (it used to wait for three in a row).
+    'console.home': function (req) {
+      var m = Auth.manager(req.session);
+      return { me: me(m), templates: templatesOut(), documents: listOf(m, req.query, req.type), activity: activityOf(m, req.since) };
     },
     'templates.upload': function (req) {
       Auth.owner(req.session);
@@ -151,7 +181,13 @@ var Api = (function () {
       var m = Auth.manager(req.session);
       var t = template(req.template);
       var clean = complete(SignCore.validateFields(t.names, req.values, 'company'));
+      // the signatory's name and title are remembered with the send itself (no second request)
+      var profile = { name: clean.company_signatory_name || m.name, title: clean.company_signatory_title || m.title };
+      var profileChanged = profile.name !== m.name || profile.title !== m.title;
+      m.name = profile.name;
+      m.title = profile.title;
       var sig = companySignature(m, req);
+      if (profileChanged && !(req.saveSignature && req.signature)) Store.saveManager(m);
       var rec = Store.withLock(function () {
         var number = Store.nextNumber(t.code);
         var dir = Docs.folder(Store.prop('DOCS_ID')).createFolder(number);
@@ -168,23 +204,16 @@ var Api = (function () {
       });
       rec.sent_pdf_id = Docs.makeSent(rec, t, companyValues(t, clean, rec.number), sig).getId();
       Store.writeRow('documents', rec);
-      Mail.invite(rec, t, linkFor(rec), m.email, false);
+      // the invitation and the manager's "Sent" notice leave together; a failed invitation still fails the step
+      var mails = Mail.batch([Mail.msg.invite(rec, t, linkFor(rec), m.email, false),
+        Mail.msg.notice(m.email, 'sent', rec, t, pages('index.html'))]);
+      if (mails[0].error) throw mails[0].error;
       Store.log(rec.number, 'sent', m.email, rec.recipient_email, client(req));
-      quietly(rec.number, 'sent', function () { Mail.notice(m.email, 'sent', rec, t, pages('index.html')); });
-      return { number: rec.number };
+      if (mails[1].error) Store.log(rec.number, 'notice failed', 'system', 'sent: ' + (mails[1].error.code || mails[1].error));
+      return { number: rec.number, me: me(m) };
     },
     'documents.list': function (req) {
-      var m = Auth.manager(req.session);
-      var q = SignCore.sanitizeValue(req.query, 100).toLowerCase();
-      var type = SignCore.sanitizeValue(req.type, 8);
-      return visible(m).filter(function (r) {
-        if (type && r.template !== type) return false;
-        return !q || [r.number, r.recipient_name, r.recipient_email, r.status].join(' ').toLowerCase().indexOf(q) >= 0;
-      }).map(function (r) {
-        return { number: r.number, template: r.template, status: r.status, recipient_name: r.recipient_name,
-          recipient_email: r.recipient_email, manager_email: r.manager_email, sent_at: r.sent_at,
-          completed_at: r.completed_at, expires_at: r.expires_at };
-      }).sort(function (a, b) { return a.sent_at < b.sent_at ? 1 : -1; });
+      return listOf(Auth.manager(req.session), req.query, req.type);
     },
     'documents.history': function (req) {
       var rec = mine(Auth.manager(req.session), req.number);
@@ -214,12 +243,7 @@ var Api = (function () {
         zip: Utilities.base64Encode(zip.getBytes()) };
     },
     'activity.list': function (req) {
-      var m = Auth.manager(req.session);
-      var set = {};
-      visible(m).forEach(function (d) { set[d.number] = true; });
-      var since = String(req.since || '');
-      var items = Store.steps(set, 50).map(function (s) { return { time: s.time, number: s.number, event: s.event, actor: s.actor }; });
-      return { items: items, fresh: items.filter(function (i) { return since && i.time > since; }).length };
+      return activityOf(Auth.manager(req.session), req.since);
     },
     'documents.download': function (req) {
       var rec = mine(Auth.manager(req.session), req.number);
@@ -345,15 +369,18 @@ var Api = (function () {
         rec.fields_json = JSON.stringify(Object.assign({}, company, clean));
         Store.writeRow('documents', rec);
         Auth.forgetSecret(rec.number);
-        return { rec: rec, file: made.file };
+        return { rec: rec, made: made };
       });
       Store.log(out.rec.number, 'signed', out.rec.recipient_email, out.rec.sha256, c);
-      [out.rec.recipient_email, out.rec.manager_email].forEach(function (to) {
-        quietly(out.rec.number, 'signed copy to ' + to, function () {
-          Mail.completed(out.rec, t, out.file.getBlob(), to, out.rec.manager_email, pages('check.html'));
-        });
+      // both signed copies leave together, with the PDF encoded once
+      var copy = { name: out.rec.number + ' signed.pdf', type: 'application/pdf', base64: out.made.base64 };
+      var to = [out.rec.recipient_email, out.rec.manager_email];
+      Mail.batch(to.map(function (addr) {
+        return Mail.msg.completed(out.rec, t, copy, addr, out.rec.manager_email, pages('check.html'));
+      })).forEach(function (r, i) {
+        if (r.error) Store.log(out.rec.number, 'notice failed', 'system', 'signed copy to ' + to[i] + ': ' + (r.error.code || r.error));
       });
-      return { number: out.rec.number, pdf: Docs.base64Of(out.file.getId()) };
+      return { number: out.rec.number, pdf: out.made.base64 };
     },
     'recipient.askNewLink': function (req) {
       var rec = openRec(req);

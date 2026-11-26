@@ -81,3 +81,15 @@ dialog::backdrop { background: rgba(23,35,60,.35); }
 details.fold > summary { cursor: pointer; font-weight: 700; list-style: none; }
 .hidden { display: none !important; }
 @media (max-width: 640px) { .card { padding: 16px; } main { padding: 4px 10px 48px; } h1 { font-size: 22px; } .filters { grid-template-columns: 1fr; } }
+
+/* Work in progress: a spinner on the busy button, a loading line, the row of a document still being sent */
+.pill.busy { pointer-events: none; cursor: progress; }
+.pill.busy::before, .loading::before { content: ''; width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+.loading { display: flex; align-items: center; gap: 10px; color: var(--muted); margin: 6px 0; }
+.badge.sending { background: var(--blue-soft); color: var(--blue); }
+.row.pending { opacity: .8; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pill.busy::before, .loading::before { animation-duration: 2.4s; } }
+.badge.sending::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: -1px;
+  border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
