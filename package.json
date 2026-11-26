@@ -6,5 +6,8 @@
     "test": "node --test \"tests/*.test.js\"",
     "e2e": "node --test \"tests/e2e/*.test.mjs\"",
     "sync": "sh scripts/sync-core.sh"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1"
   }
 }
