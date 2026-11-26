@@ -32,7 +32,7 @@ var Mail = (function () {
     return '<div style="background:#F5F7FB;padding:32px 12px;font-family:Inter,Segoe UI,Arial,sans-serif">' +
       '<div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E3E8F2;border-radius:18px;' +
       'padding:28px;box-shadow:0 12px 28px -8px rgba(23,35,60,.06)">' +
-      '<img src="' + esc(Store.prop('PAGES_URL') + '/assets/logo.png') + '" alt="Myles Tech Solutions" height="56" style="display:block;margin:0 0 18px">' +
+      '<img src="' + esc(Store.prop('PAGES_URL') + '/assets/logo.png') + '" alt="Myles Tech Solutions" width="56" height="56" style="display:block;margin:0 0 18px;border-radius:12px">' +
       block(en) + btn +
       '<hr style="border:0;border-top:1px solid #E3E8F2;margin:22px 0">' + block(fr) +
       (button ? '<p style="margin:16px 0 0;font-size:12px;color:#5F6B82">' + esc(button.url) + '</p>' : '') +
