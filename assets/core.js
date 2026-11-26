@@ -89,7 +89,77 @@ var SignCore = (function () {
     return { clean: clean, missing: missing, invalid: invalid };
   }
 
+  function documentNumber(code, year, seq) {
+    if (!/^[A-Z]{2,8}$/.test(String(code))) throw new Error('template code must be 2 to 8 capital letters');
+    return 'MT-' + code + '-' + year + '-' + ('0000' + seq).slice(-4);
+  }
+
+  // Six digits from at least 13 random hex characters (52 bits, exact in a JS number).
+  function codeFromHex(hex) {
+    var n = parseInt(String(hex).slice(0, 13), 16) % 1000000;
+    return ('000000' + n).slice(-6);
+  }
+
+  function bytesToHex(bytes) {
+    var out = '';
+    for (var i = 0; i < bytes.length; i++) {
+      var b = bytes[i] & 0xff;
+      out += (b < 16 ? '0' : '') + b.toString(16);
+    }
+    return out;
+  }
+
+  // state: { tries, lockedUntil }; known: a code is on file; matches: the code typed is that code.
+  function codeAttempt(state, known, matches, now) {
+    var s = { tries: (state && state.tries) || 0, lockedUntil: (state && state.lockedUntil) || 0 };
+    if (now < s.lockedUntil) return { allowed: false, reason: 'locked', retryAt: s.lockedUntil, state: s };
+    if (!known) return { allowed: false, reason: 'expired', state: s };
+    if (matches) return { allowed: true, reason: 'ok', state: { tries: 0, lockedUntil: 0 } };
+    var tries = s.tries + 1;
+    if (tries >= LIMITS.codeTries) {
+      var until = now + LIMITS.lockMinutes * MINUTE;
+      return { allowed: false, reason: 'locked', retryAt: until, state: { tries: 0, lockedUntil: until } };
+    }
+    return { allowed: false, reason: 'wrong', left: LIMITS.codeTries - tries, state: { tries: tries, lockedUntil: 0 } };
+  }
+
+  var MOVES = {
+    open: { sent: 'opened', opened: 'opened' },
+    sign: { sent: 'completed', opened: 'completed' },
+    withdraw: { sent: 'withdrawn', opened: 'withdrawn' },
+    expire: { sent: 'expired', opened: 'expired' },
+    resend: { sent: 'sent', opened: 'sent', expired: 'sent' }
+  };
+
+  function transition(status, event) {
+    var to = MOVES[event] && MOVES[event][status];
+    if (!to) {
+      var e = new Error('a ' + status + ' document does not allow "' + event + '"');
+      e.code = 'BAD_STATE';
+      throw e;
+    }
+    return to;
+  }
+
+  function expiresAt(sentMs) {
+    return new Date(sentMs + LIMITS.expireAfterDays * DAY).toISOString();
+  }
+
+  function sweepAction(doc, now) {
+    if (doc.status !== 'sent' && doc.status !== 'opened') return null;
+    if (doc.expiresAt && now >= Date.parse(doc.expiresAt)) return 'expire';
+    if (!doc.remindedAt && doc.sentAt && now - Date.parse(doc.sentAt) >= LIMITS.remindAfterDays * DAY) return 'remind';
+    return null;
+  }
+
   return {
+    documentNumber: documentNumber,
+    codeFromHex: codeFromHex,
+    bytesToHex: bytesToHex,
+    codeAttempt: codeAttempt,
+    transition: transition,
+    expiresAt: expiresAt,
+    sweepAction: sweepAction,
     sanitizeValue: sanitizeValue,
     isEmail: isEmail,
     sideFields: sideFields,

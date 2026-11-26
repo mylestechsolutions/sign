@@ -72,3 +72,66 @@ test('validateFields rejects a bad date or e-mail', () => {
   }, 'company');
   assert.deepEqual(r.invalid.sort(), ['company_start_date', 'recipient_email']);
 });
+
+test('documentNumber is MT-<code>-<year>-<4 digits>', () => {
+  assert.equal(C.documentNumber('NDA', 2026, 7), 'MT-NDA-2026-0007');
+  assert.throws(() => C.documentNumber('nda', 2026, 1), /code/);
+});
+
+test('codeFromHex gives six digits from random hex', () => {
+  assert.equal(C.codeFromHex('0000000000000'), '000000');
+  assert.equal(C.codeFromHex('00000000f4240'), '000000');
+  assert.equal(C.codeFromHex('00000000f4241'), '000001');
+  assert.match(C.codeFromHex('9f86d081884c7d659a2feaa0c55ad015'), /^\d{6}$/);
+});
+
+test('bytesToHex reads signed bytes the way Apps Script returns them', () => {
+  assert.equal(C.bytesToHex([0, 15, -1, -128, 127]), '000fff807f');
+});
+
+test('codeAttempt: a right code passes and clears the tries', () => {
+  const r = C.codeAttempt({ tries: 2, lockedUntil: 0 }, true, true, 1000);
+  assert.equal(r.allowed, true);
+  assert.deepEqual(r.state, { tries: 0, lockedUntil: 0 });
+});
+
+test('codeAttempt: an expired code is refused without spending a try', () => {
+  const r = C.codeAttempt({ tries: 1, lockedUntil: 0 }, false, false, 1000);
+  assert.equal(r.reason, 'expired');
+  assert.equal(r.state.tries, 1);
+});
+
+test('codeAttempt: the fifth wrong code locks for 15 minutes', () => {
+  let state = { tries: 0, lockedUntil: 0 };
+  let r;
+  for (let i = 0; i < 4; i++) { r = C.codeAttempt(state, true, false, 1000); state = r.state; }
+  assert.equal(r.reason, 'wrong');
+  assert.equal(r.left, 1);
+  r = C.codeAttempt(state, true, false, 1000);
+  assert.equal(r.reason, 'locked');
+  assert.equal(r.state.lockedUntil, 1000 + 15 * 60 * 1000);
+  const during = C.codeAttempt(r.state, true, true, 2000);
+  assert.equal(during.allowed, false);
+  assert.equal(during.reason, 'locked');
+  const after = C.codeAttempt(r.state, true, true, 1000 + 15 * 60 * 1000);
+  assert.equal(after.allowed, true);
+});
+
+test('transition follows the life of a document', () => {
+  assert.equal(C.transition('sent', 'open'), 'opened');
+  assert.equal(C.transition('opened', 'sign'), 'completed');
+  assert.equal(C.transition('sent', 'withdraw'), 'withdrawn');
+  assert.equal(C.transition('expired', 'resend'), 'sent');
+  assert.throws(() => C.transition('completed', 'sign'), (e) => e.code === 'BAD_STATE');
+  assert.throws(() => C.transition('withdrawn', 'open'), (e) => e.code === 'BAD_STATE');
+});
+
+test('sweepAction reminds once after 3 days and expires after 30', () => {
+  const sent = Date.UTC(2026, 10, 1);
+  const doc = { status: 'sent', sentAt: new Date(sent).toISOString(), expiresAt: C.expiresAt(sent), remindedAt: '' };
+  assert.equal(C.sweepAction(doc, sent + 2 * C.DAY), null);
+  assert.equal(C.sweepAction(doc, sent + 3 * C.DAY), 'remind');
+  assert.equal(C.sweepAction(Object.assign({}, doc, { remindedAt: 'x' }), sent + 4 * C.DAY), null);
+  assert.equal(C.sweepAction(doc, sent + 30 * C.DAY), 'expire');
+  assert.equal(C.sweepAction(Object.assign({}, doc, { status: 'completed' }), sent + 40 * C.DAY), null);
+});
