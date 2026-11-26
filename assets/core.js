@@ -48,7 +48,52 @@ var SignCore = (function () {
     return words.charAt(0).toUpperCase() + words.slice(1);
   }
 
+  function sanitizeValue(value, max) {
+    var s = String(value == null ? '' : value);
+    s = s.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\{\{|\}\}/g, '').replace(/\s+/g, ' ').trim();
+    var limit = max || LIMITS.valueMax;
+    return s.length > limit ? s.slice(0, limit) : s;
+  }
+
+  function isEmail(s) {
+    var v = String(s || '');
+    return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+  }
+
+  // Which fields a side must fill. The recipient's e-mail is part of the envelope, set by the company.
+  function sideFields(fieldNames, side) {
+    var names = fieldNames.filter(function (n) {
+      return fieldOwner(n) === side && !(side === 'recipient' && n === 'recipient_email');
+    });
+    if (side === 'company') {
+      ['recipient_name', 'recipient_email'].forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
+    }
+    if (side === 'recipient' && names.indexOf('recipient_name') < 0 && fieldNames.indexOf('recipient_name') >= 0) {
+      names.unshift('recipient_name');
+    }
+    return names;
+  }
+
+  function validateFields(fieldNames, values, side) {
+    var clean = {};
+    var missing = [];
+    var invalid = [];
+    sideFields(fieldNames, side).forEach(function (name) {
+      var v = sanitizeValue(values && values[name]);
+      if (!v) { missing.push(name); return; }
+      var kind = fieldKind(name);
+      if (kind === 'email' && !isEmail(v)) invalid.push(name);
+      if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) invalid.push(name);
+      clean[name] = v;
+    });
+    return { clean: clean, missing: missing, invalid: invalid };
+  }
+
   return {
+    sanitizeValue: sanitizeValue,
+    isEmail: isEmail,
+    sideFields: sideFields,
+    validateFields: validateFields,
     LIMITS: LIMITS,
     MINUTE: MINUTE,
     DAY: DAY,
