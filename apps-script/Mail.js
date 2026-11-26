@@ -1,8 +1,8 @@
-// Every e-mail goes through Amazon SES (management account, us-east-1), from Myles Tech Solutions
+// Every e-mail goes through Amazon SES (management account, us-east-1), from MylesTech
 // <sign@mylestechsolutionsllc.com>, replies to the manager. The message is built by SignCore.mime and the
 // request signed by SignCore.sigv4 (the same code the Node tests check against botocore).
 var Mail = (function () {
-  var NAME = 'Myles Tech Solutions';
+  var NAME = 'MylesTech';
   var ADDRESS = 'Myles Tech Solutions SARL, Quartier Hippodrome, Yaoundé, Cameroon';
   var HOST = 'email.us-east-1.amazonaws.com';
   var PATH = '/v2/email/outbound-emails';
@@ -32,7 +32,7 @@ var Mail = (function () {
     return '<div style="background:#F5F7FB;padding:32px 12px;font-family:Inter,Segoe UI,Arial,sans-serif">' +
       '<div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E3E8F2;border-radius:18px;' +
       'padding:28px;box-shadow:0 12px 28px -8px rgba(23,35,60,.06)">' +
-      '<img src="' + esc(Store.prop('PAGES_URL') + '/assets/logo.png') + '" alt="Myles Tech Solutions" width="56" height="56" style="display:block;margin:0 0 18px;border-radius:12px">' +
+      '<img src="' + esc(Store.prop('PAGES_URL') + '/assets/logo.png') + '" alt="MylesTech" width="56" height="56" style="display:block;margin:0 0 18px;border-radius:12px">' +
       block(en) + btn +
       '<hr style="border:0;border-top:1px solid #E3E8F2;margin:22px 0">' + block(fr) +
       (button ? '<p style="margin:16px 0 0;font-size:12px;color:#5F6B82">' + esc(button.url) + '</p>' : '') +
@@ -108,8 +108,8 @@ var Mail = (function () {
           'Vous serez prévenu à l\'ouverture et à la signature.'] }],
       opened: ['Opened: ' + rec.number, { title: rec.recipient_name + ' opened the document', lines: [tpl.title_en + ' (' + rec.number + ') was opened after the e-mail code was confirmed.'] },
         { title: rec.recipient_name + ' a ouvert le document', lines: [tpl.title_fr + ' (' + rec.number + ') a été ouvert après confirmation du code.'] }],
-      withdrawn: ['Withdrawn: ' + tpl.title_en + ' (' + rec.number + ')', { title: 'This document was withdrawn', lines: ['Myles Tech Solutions withdrew ' + tpl.title_en + ' (' + rec.number + '). The link no longer works; nothing more is needed from you.'] },
-        { title: 'Ce document a été retiré', lines: ['Myles Tech Solutions a retiré ' + tpl.title_fr + ' (' + rec.number + '). Le lien ne fonctionne plus ; rien d\'autre n\'est attendu de vous.'] }],
+      withdrawn: ['Withdrawn: ' + tpl.title_en + ' (' + rec.number + ')', { title: 'This document was withdrawn', lines: ['MylesTech withdrew ' + tpl.title_en + ' (' + rec.number + '). The link no longer works; nothing more is needed from you.'] },
+        { title: 'Ce document a été retiré', lines: ['MylesTech a retiré ' + tpl.title_fr + ' (' + rec.number + '). Le lien ne fonctionne plus ; rien d\'autre n\'est attendu de vous.'] }],
       expired: ['Expired: ' + rec.number, { title: rec.recipient_name + ' did not sign in time', lines: ['The link for ' + tpl.title_en + ' (' + rec.number + ') has expired. Resend it from the console if it is still needed.'] },
         { title: rec.recipient_name + ' n\'a pas signé à temps', lines: ['Le lien de ' + tpl.title_fr + ' (' + rec.number + ') a expiré. Renvoyez-le depuis la console si besoin.'] }],
       newLink: ['A new link is asked for ' + rec.number, { title: rec.recipient_name + ' asks for a new link', lines: ['The link for ' + rec.number + ' has expired. Resend it from the console.'] },

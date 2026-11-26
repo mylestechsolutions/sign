@@ -1,4 +1,4 @@
-# Myles Tech document signing
+# MylesTech document signing
 
 A manager prepares an agreement, signs it for Myles Tech Solutions SARL and sends it by e-mail; the recipient
 confirms a code sent to their e-mail, fills their part and signs; both receive the signed PDF.
