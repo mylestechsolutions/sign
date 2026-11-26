@@ -26,7 +26,6 @@ FIXED = {
     'Name:': 'company_signatory_name',
     'Title:': 'company_signatory_title',
     'Full legal name:': 'recipient_name',
-    'Place of signature:': 'recipient_place',
 }
 BY_BLOCK = {
     'Signature:': {'company': 'company_signature', 'intern': 'recipient_signature'},
@@ -38,9 +37,11 @@ EXPECTED = Counter({
     'company_start_date': 1, 'company_end_date': 1, 'company_work_location': 1,
     'company_security_contact': 1, 'company_urgent_channel': 1, 'company_signatory_name': 1,
     'company_signatory_title': 1, 'company_signature': 1, 'company_signed_date': 1,
-    'recipient_signature': 1, 'recipient_signed_date': 1, 'recipient_place': 1,
+    'recipient_signature': 1, 'recipient_signed_date': 1,
 })
 BLANK = re.compile(r'_{4,}')
+# Left out of the template: the founder decided on 26 Nov 2026 that the intern is not asked where they sign.
+DROP = re.compile(r'\n?Place of signature:\s*_{4,}')
 FIELD = re.compile(r'\{\{([a-z_]+)\}\}')
 
 
@@ -61,6 +62,9 @@ def mark(src, dst):
         block = 'company' if 'FOR MYLES TECH SOLUTIONS SARL' in p.text else ('intern' if p.text.startswith('INTERN') else '')
         for run in p.runs:
             text = run.text
+            if block == 'intern' and DROP.search(text):
+                text = DROP.sub('', text)
+                run.text = text
             if not BLANK.search(text):
                 continue
             out, pos = [], 0
@@ -85,6 +89,8 @@ def check(dst):
         sys.exit(f'fields differ from the plan: {dict(found - EXPECTED)} extra, {dict(EXPECTED - found)} missing')
     if BLANK.search(text):
         sys.exit('a blank was left unmarked')
+    if 'Place of signature' in text:
+        sys.exit('the place line should have been left out')
     return found
 
 

@@ -12,7 +12,6 @@ var NDA_TEMPLATE = {
     recipient_address: ['Address', 'Adresse'],
     recipient_school: ['School or university', 'École ou université'],
     recipient_course: ['Course of study', 'Filière'],
-    recipient_place: ['Place of signature', 'Lieu de signature'],
     company_role_department: ['Internship role and department', 'Poste et département du stage'],
     company_supervisor: ['Company supervisor', 'Superviseur dans l\'entreprise'],
     company_effective_date: ['Effective date', 'Date d\'entrée en vigueur'],
@@ -105,7 +104,7 @@ function selfTest() {
   var t = Store.template(NDA_TEMPLATE.code);
   var meta = JSON.parse(t.fields_json);
   var inDoc = meta.filter(function (f) { return f.name !== 'recipient_email'; }).map(function (f) { return f.name; });
-  lines.push('template fields: ' + inDoc.length + (inDoc.length === 19 ? ' ok' : ' EXPECTED 19'));
+  lines.push('template fields: ' + inDoc.length + (inDoc.length === 18 ? ' ok' : ' EXPECTED 18'));
   var copyId = DriveApp.getFileById(t.doc_id).makeCopy('self-test', Docs.folder(Store.prop('TMP_ID'))).getId();
   var values = {};
   inDoc.forEach(function (n) { values[n] = 'TEST ' + n; });

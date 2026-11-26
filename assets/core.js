@@ -167,7 +167,7 @@ var SignCore = (function () {
       ['Company signature time / Heure de signature de la société', formatUtc(c.company.signedAt)],
       ['Signed by / Signé par', c.recipient.name + ' <' + c.recipient.email + '>'],
       ['Signature time / Heure de signature', formatUtc(c.recipient.signedAt)],
-      ['Place given / Lieu indiqué', c.recipient.place],
+      c.recipient.place ? ['Place given / Lieu indiqué', c.recipient.place] : null,
       ['E-mail confirmed / Adresse confirmée',
         'A 6-digit code sent to this address was entered before signing. / ' +
         'Un code à 6 chiffres envoyé à cette adresse a été saisi avant la signature.'],
@@ -175,7 +175,7 @@ var SignCore = (function () {
         c.recipient.ip || 'not reported / non déclarée'],
       ['Fingerprint of the agreement pages (SHA-256) / Empreinte des pages de l\'accord', c.agreementSha256],
       ['Check this document / Vérifier ce document', c.checkUrl]
-    ];
+    ].filter(Boolean);
   }
 
   // AWS Signature Version 4 for a POST, signed on host and x-amz-date.

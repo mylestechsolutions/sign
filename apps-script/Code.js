@@ -1,5 +1,5 @@
 // Entry points of the web app. Every request is a POST of JSON { action, ... } sent as text/plain (no pre-flight).
-var VERSION = '1.1.1';
+var VERSION = '1.1.2';
 
 function doGet() {
   return json_({ ok: true, data: { service: 'mylestech-sign', version: VERSION } });

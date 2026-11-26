@@ -201,3 +201,12 @@ test('mime puts a copy recipient in a Cc header', () => {
     html: '<p>x</p>', attachments: [] }, 'b1', c);
   assert.doesNotMatch(without, /\r\nCc:/);
 });
+
+test('the certificate has no place row when no place was asked', () => {
+  const base = { title: 'NDA', number: 'MT-NDA-2026-0009', checkUrl: 'https://x/check.html', agreementSha256: 'ab',
+    company: { name: 'A', title: 'B', email: 'a@example.org', signedAt: Date.UTC(2026, 10, 26) },
+    recipient: { name: 'C', email: 'c@example.org', signedAt: Date.UTC(2026, 10, 26), place: '', ip: '' } };
+  assert.equal(C.certificateRows(base).some((r) => /Place given/.test(r[0])), false);
+  base.recipient.place = 'Yaounde';
+  assert.equal(C.certificateRows(base).some((r) => /Place given/.test(r[0])), true);
+});
