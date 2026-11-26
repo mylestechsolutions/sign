@@ -19,18 +19,20 @@ its template. It is the company's own tool, independent of EduCore and C4, and c
 | Proof of the signer | A secret link, a 6-digit code sent to the recipient's e-mail, a drawn or typed signature |
 | Proof of the document | A certificate page in the PDF and its fingerprint in a register, checkable on a public page |
 | Where it runs | Pages on GitHub Pages (public repository `mylestechsolutions/sign`); back end as a Google Apps Script running as the owner's Gmail; files and register in that account's Google Drive |
-| Cost | Nothing beyond accounts the company already has |
+| E-mail | Amazon SES in the management account (domain `mylestechsolutionsllc.com`), from `sign@mylestechsolutionsllc.com`, replies to the manager (amendment of 26 November) |
+| Choosing a document | A dropdown of every template (NDA first, MOU when uploaded); the owner uploads new templates (amendment of 26 November) |
+| Cost | Nothing beyond accounts the company already has, plus SES at $0.10 per 1,000 e-mails |
 
 ## 1. How it works
 
 1. **Sign in.** A manager opens the console, types their e-mail, receives a 6-digit code and is in. Only addresses
    on the managers list get a code. The owner adds and removes managers.
-2. **Prepare.** "New NDA" asks for the company's part: the intern's full legal name and e-mail, role and
+2. **Prepare.** "New document" opens a dropdown of document types (NDA, MOU, ...); for the NDA it asks for the company's part: the intern's full legal name and e-mail, role and
    department, supervisor, effective, start and end dates, work location, security contact and urgent channel, and
    the name and title of the company signatory. The manager signs (drawn once and remembered, or typed), previews
    the PDF and presses Send.
-3. **Invite.** The recipient receives an e-mail from the owner's Gmail, sender name "Myles Tech Solutions", with
-   replies going to the manager who sent it: "Please review and sign your Student Intern NDA". The button opens
+3. **Invite.** The recipient receives an e-mail from `Myles Tech Solutions <sign@mylestechsolutionsllc.com>` (sent
+   through Amazon SES), with replies going to the manager who sent it: "Please review and sign your Student Intern NDA". The button opens
    the signing page, which sends a 6-digit code to the same address.
 4. **Sign.** The recipient reads the NDA with the company's part filled in, adds their address, school or
    university, course of study and place of signature, may correct their name (the correction is recorded),
@@ -66,8 +68,8 @@ Every page is in English and French, with the language menu at the top right.
 - **Templates**: a Word file converted to a Google Doc, its blanks marked as named fields. For each document the
   template is copied, the fields are replaced, the signature images are put in place, and the copy is saved as PDF.
 
-**Limits of a free Gmail account**: about 100 e-mail recipients a day. One NDA uses about 5 (two codes, the
-invitation, two signed copies), so about 20 NDAs a day. Storage: the account's free 15 GB; an NDA is under 1 MB.
+**E-mail limits**: SES allows 50,000 e-mails a day (one NDA uses about 5). The script calls SES over HTTPS with
+AWS Signature Version 4, as an IAM user allowed only to send as `sign@mylestechsolutionsllc.com`. Storage: the account's free 15 GB; an NDA is under 1 MB.
 
 ## 3. Security, records and proof
 

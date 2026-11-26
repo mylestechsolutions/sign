@@ -3279,6 +3279,59 @@ Expected: `pushed`; the repository is private (`gh api repos/mylestechsolutions/
 
 ---
 
+## Amendment 1 (26 November 2026): every e-mail goes through Amazon SES
+
+The founder, during the build: "make sure u wire the email functionality and ensure parties can send email use
+the SES we have in AWS". So the back end no longer sends with MailApp (Gmail). It calls Amazon SES in the
+management account, region us-east-1 (production access, 50,000 e-mails a day, the domain
+`mylestechsolutionsllc.com` verified with DKIM), over HTTPS, signed with AWS Signature Version 4, as an IAM user
+that may only send as `sign@mylestechsolutionsllc.com`.
+
+- **From:** `Myles Tech Solutions <sign@mylestechsolutionsllc.com>`. **Reply-To:** the manager who sent the
+  document, so the parties write to each other simply by replying.
+- **Cost:** $0.10 per 1,000 e-mails. The Gmail limit of about 100 a day no longer applies.
+- **Manifest (Task 10):** replace the scope `https://www.googleapis.com/auth/script.send_mail` with
+  `https://www.googleapis.com/auth/script.external_request`.
+- **Task 7a (new, after Task 7):** two pure functions in `assets/core.js`, tested with Node:
+  `SignCore.sigv4(req, creds, crypto)` and `SignCore.mime(message, seed, crypto)`. The crypto primitives are
+  passed in (`hmac`, `sha256hex`, `bytes`, `b64`) because Node, Apps Script and browsers each have their own.
+  The SigV4 test's expected value is computed once with botocore (`python3 -c ...` in the task) and written
+  into the test.
+- **Task 14 (replaced):** `Mail.send()` builds the message with `SignCore.mime` and POSTs it to
+  `https://email.us-east-1.amazonaws.com/v2/email/outbound-emails` (`Content.Raw`) with `UrlFetchApp`, headers
+  from `SignCore.sigv4`. A refused send becomes `MAIL_FAILED` (or `MAIL_LIMIT` on HTTP 429).
+- **Task 23a (new, before Task 24):** in AWS 558: IAM user `mylestech-sign-mailer`, an inline policy allowing
+  only `ses:SendEmail` and `ses:SendRawEmail` on the domain identity with the condition
+  `ses:FromAddress = sign@mylestechsolutionsllc.com`, one access key written to a mode-600 file (never printed).
+  Proof from this Mac: Node sends one message with the same `core.js` signing to
+  `success@simulator.amazonses.com` (SES's test mailbox) and gets a MessageId.
+- **Task 24 (changed):** the key travels to the script in `apps-script/Secrets.html` (git-ignored, pushed by
+  clasp); `setup()` moves it into Script Properties (`SES_ACCESS_KEY`, `SES_SECRET_KEY`, `MAIL_FROM`); the file is
+  then deleted locally and the project pushed again, so it leaves the script project.
+- **Bounces:** SES forwards bounce and complaint notices to the From address. A `sign@` mailbox at Hostinger
+  receives them if the owner creates one; sending works without it.
+
+## Amendment 2 (26 November 2026): a document type dropdown, and new types uploaded by the owner
+
+The founder: "it should have dropdown for NDA, MOU etc".
+
+- **Console (Task 19):** the blue button reads "New document" (`console.new`: "New document" / "Nouveau document").
+  The compose view starts with a dropdown of every active template (`templates.list`), showing the title in the
+  current language; the NDA is chosen first. Changing the choice rebuilds the recipient and company fields for
+  that template; values typed under fields of the same name are kept.
+- **Owner's templates card (new, in the Managers view):** choose a `.docx` whose blanks are marked `{{field}}`,
+  give a code (2 to 8 capital letters, for example `MOU`) and the English and French titles, press Upload. The
+  page sends the file as base64 to `templates.upload` (owner only).
+- **`templates.upload` (new action in Task 15):** converts the file to a Google Doc (`Docs.importTemplate`),
+  reads its fields (`Docs.fieldsOf`), refuses it (`TEMPLATE_INVALID`, with the reason) unless it has
+  `company_signature`, `recipient_signature`, at least one `company_` and one `recipient_` field, and a code not
+  already used; otherwise stores it with labels from `SignCore.humanLabel` (English and French alike) and
+  answers with the field list. It appears in the dropdown at once.
+- **Tests:** the stand-in (Task 22) returns two templates (`NDA` and a two-field `MOU`) and the end-to-end test
+  checks that choosing MOU shows its fields and that choosing NDA again restores the NDA's.
+
+---
+
 ## Execution
 
 Plan complete and saved to `docs/plans/2026-11-26-document-signing.md`. Two ways to carry it out:
