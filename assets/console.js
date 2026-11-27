@@ -2,7 +2,7 @@ import { showPdf } from './pdfview.js';
 
 const $ = (s) => document.querySelector(s);
 const state = { session: localStorage.getItem('mts.session') || '', me: null, templates: [], pad: null, typeMode: false,
-  pending: [], draft: null };
+  pending: [], draft: null, start: { compose: null, managers: null } };
 const HOME = 'mts.home';  // the last start screen, shown at once on the next visit, then refreshed
 const VIEWS = ['signin', 'home', 'compose', 'managers'];
 
@@ -31,18 +31,11 @@ async function templates() {
 }
 
 function closeOnX(dialog) { dialog.querySelector('.x').onclick = () => dialog.close(); }
-function confirmBox(text, okLabel, tone) {
-  const d = $('#confirm');
-  $('#confirm-text').textContent = text;
-  $('#confirm-ok').textContent = okLabel;
-  $('#confirm-ok').className = 'pill ' + (tone || 'red');
-  $('#confirm-no').textContent = Lang.get() === 'fr' ? 'Annuler' : 'Cancel';
-  return new Promise((resolve) => {
-    $('#confirm-ok').onclick = () => { d.close(); resolve(true); };
-    $('#confirm-no').onclick = () => { d.close(); resolve(false); };
-    d.querySelector('.x').onclick = () => { d.close(); resolve(false); };
-    d.showModal();
-  });
+
+// Something typed (or drawn) on a screen that leaving it would throw away: its inputs differ from when it opened.
+function unsaved(view) {
+  if ($('#' + view).classList.contains('hidden') || state.start[view] === null) return false;
+  return Http.entries($('#' + view)) !== state.start[view] || (view === 'compose' && !!state.pad && !state.pad.isEmpty());
 }
 
 function renderSignin() {
@@ -102,10 +95,13 @@ async function renderHome() {
   sel.innerHTML = `<option value="">${Lang.t('console.allTypes')}</option>`;
   $('#h-new').onclick = renderCompose;
   if (owner) $('#h-managers').onclick = () => Http.busy($('#h-managers'), renderManagers);
-  $('#h-out').onclick = () => Http.busy($('#h-out'), async () => {
-    try { await call('manager.signOut'); } catch (e) { /* signed out anyway */ }
-    forget(); renderSignin();
-  });
+  $('#h-out').onclick = async () => {
+    if (!(await Http.ask(Lang.t('console.confirmSignout'), Lang.t('console.signout')))) return;
+    await Http.busy($('#h-out'), async () => {
+      try { await call('manager.signOut'); } catch (e) { /* signed out anyway */ }
+      forget(); renderSignin();
+    });
+  };
   $('#h-export').onclick = () => Http.busy($('#h-export'), async () => {
     try {
       const r = await call('documents.export', { type: sel.value });
@@ -185,7 +181,7 @@ function renderRows(rows) {
       btn('doc.history', '', () => openHistory(r));
       if (['sent', 'opened', 'expired'].includes(r.status)) {
         btn('doc.resend', '', async (b) => {
-          if (!(await confirmBox(Lang.t('doc.confirmResend', { name: r.recipient_name }), Lang.t('doc.resend'), 'blue'))) return;
+          if (!(await Http.ask(Lang.t('doc.confirmResend', { name: r.recipient_name }), Lang.t('doc.resend'), 'blue'))) return;
           await Http.busy(b, async () => {
             try { await call('documents.resend', { number: r.number }); Http.toast(Lang.t('new.sent', { number: r.number })); loadList(); }
             catch (e) { Http.toast(e.message); }
@@ -194,7 +190,7 @@ function renderRows(rows) {
       }
       if (['sent', 'opened'].includes(r.status)) {
         btn('doc.withdraw', 'red', async (b) => {
-          if (!(await confirmBox(Lang.t('doc.confirmWithdraw'), Lang.t('doc.withdraw')))) return;
+          if (!(await Http.ask(Lang.t('doc.confirmWithdraw'), Lang.t('doc.withdraw')))) return;
           await Http.busy(b, async () => {
             try { await call('documents.withdraw', { number: r.number }); loadList(); } catch (e) { Http.toast(e.message); }
           });
@@ -298,8 +294,10 @@ async function renderCompose() {
     $('#c-preview').disabled = need.length > 0;
     $('#c-why').textContent = need.length ? Lang.t('need', { list: need.join(', ') }) : '';
   };
-  fieldsFor(state.draft && state.draft.template === sel.value ? state.draft.values : {});
-  sel.onchange = () => { fieldsFor(collect($('#compose'))); update(); };
+  // What was typed for one type stays when the type is switched and back: switching never throws entries away.
+  const kept = Object.assign({}, state.draft && state.draft.template === sel.value ? state.draft.values : {});
+  fieldsFor(kept);
+  sel.onchange = () => { Object.assign(kept, collect($('#compose'))); fieldsFor(kept); update(); };
   $('#compose').addEventListener('input', update);
   $('#c-saved').onchange = update;
   state.pad.onChange(update);
@@ -311,7 +309,13 @@ async function renderCompose() {
     state.pad.clear();
   };
   $('#c-typed').oninput = () => state.pad.typed($('#c-typed').value);
-  $('#c-close').onclick = renderHome;
+  $('#c-close').onclick = async () => {
+    if (unsaved('compose')) {
+      if (!(await Http.ask(Lang.t('new.confirmClose'), Lang.t('ui.close')))) return;
+      state.draft = null;
+    }
+    renderHome();
+  };
   const payload = () => ({ template: sel.value, values: collect($('#compose')),
     signature: usingSaved() ? '' : state.pad.png(), saveSignature: !usingSaved() && $('#c-remember').checked });
   $('#c-preview').onclick = () => Http.busy($('#c-preview'), async () => {
@@ -326,9 +330,13 @@ async function renderCompose() {
   });
   // Sign and send returns to the list at once with the document marked "Sending"; the server finishes in the
   // background (about 6 s) and the list then shows its number. If it fails, the entries stay in New document.
-  $('#c-send').onclick = () => {
+  $('#c-send').onclick = async () => {
     errorIn('#c-error');
     const p = payload();
+    let text = Lang.t('new.confirmSend', { title: titleOf(current()), name: String(p.values.recipient_name).trim(),
+      email: String(p.values.recipient_email).trim() });
+    if (p.saveSignature && state.me.hasSignature) text += ' ' + Lang.t('new.replacesSaved');
+    if (!(await Http.ask(text, Lang.t('new.send'), 'blue'))) return;
     const job = { template: p.template, name: p.values.recipient_name, email: p.values.recipient_email };
     state.draft = { template: p.template, values: p.values };
     state.pending.push(job);
@@ -345,6 +353,7 @@ async function renderCompose() {
     });
   };
   update();
+  state.start.compose = Http.entries($('#compose'));
 }
 
 async function renderManagers() {
@@ -380,7 +389,7 @@ async function renderManagers() {
       b.className = 'pill small red';
       b.textContent = Lang.t('managers.remove');
       b.onclick = async () => {
-        if (!(await confirmBox(Lang.t('managers.confirmRemove', { email: m.email }), Lang.t('managers.remove')))) return;
+        if (!(await Http.ask(Lang.t('managers.confirmRemove', { email: m.email }), Lang.t('managers.remove')))) return;
         await Http.busy(b, async () => { try { await call('managers.remove', { email: m.email }); await renderManagers(); } catch (e) { errorIn('#m-error', e); } });
       };
       el.appendChild(b);
@@ -395,24 +404,41 @@ async function renderManagers() {
     el.querySelector('.muted').textContent = t.code + ' · ' + t.fields.length + ' fields';
     $('#t-list').appendChild(el);
   });
-  $('#m-add').onclick = () => Http.busy($('#m-add'), async () => {
-    try { await call('managers.add', { email: $('#m-email').value, name: $('#m-name').value, title: $('#m-title').value }); await renderManagers(); }
-    catch (e) { errorIn('#m-error', e); }
-  });
-  $('#t-upload').onclick = () => Http.busy($('#t-upload'), async () => {
+  $('#m-add').onclick = async () => {
+    errorIn('#m-error');
+    const email = $('#m-email').value.trim().toLowerCase();
+    if (!SignCore.isEmail(email)) { errorIn('#m-error', { message: Lang.t('err.BAD_EMAIL') }); return; }
+    if (!(await Http.ask(Lang.t('managers.confirmAdd', { email }), Lang.t('managers.add'), 'blue'))) return;
+    await Http.busy($('#m-add'), async () => {
+      try { await call('managers.add', { email, name: $('#m-name').value, title: $('#m-title').value }); await renderManagers(); }
+      catch (e) { errorIn('#m-error', e); }
+    });
+  };
+  $('#t-upload').onclick = async () => {
     errorIn('#t-error');
     const file = $('#t-file').files[0];
+    const code = $('#t-code').value.trim().toUpperCase();
+    const titleEn = $('#t-en').value.trim();
     if (!file) { errorIn('#t-error', { message: Lang.t('templates.file') }); return; }
-    try {
-      const r = await call('templates.upload', { docx: await Http.fileBase64(file), code: $('#t-code').value,
-        title_en: $('#t-en').value, title_fr: $('#t-fr').value });
-      Http.toast(Lang.t('templates.done', { code: r.code, n: r.fields.length }));
-      state.templates = [];
-      localStorage.removeItem(HOME);
-      await renderManagers();
-    } catch (e) { errorIn('#t-error', e); }
-  });
-  $('#m-close').onclick = renderHome;
+    if (!/^[A-Z]{2,8}$/.test(code)) { errorIn('#t-error', { message: Lang.t('templates.code') }); return; }
+    if (!titleEn) { errorIn('#t-error', { message: Lang.t('templates.titleEn') }); return; }
+    const shown = (Lang.get() === 'fr' && $('#t-fr').value.trim()) || titleEn;
+    if (!(await Http.ask(Lang.t('templates.confirmUpload', { code, title: shown }), Lang.t('templates.upload'), 'blue'))) return;
+    await Http.busy($('#t-upload'), async () => {
+      try {
+        const r = await call('templates.upload', { docx: await Http.fileBase64(file), code, title_en: titleEn, title_fr: $('#t-fr').value });
+        Http.toast(Lang.t('templates.done', { code: r.code, n: r.fields.length }));
+        state.templates = [];
+        localStorage.removeItem(HOME);
+        await renderManagers();
+      } catch (e) { errorIn('#t-error', e); }
+    });
+  };
+  $('#m-close').onclick = async () => {
+    if (unsaved('managers') && !(await Http.ask(Lang.t('ui.confirmClose'), Lang.t('ui.close')))) return;
+    renderHome();
+  };
+  state.start.managers = Http.entries($('#managers'));
 }
 
 async function boot() {
@@ -420,6 +446,8 @@ async function boot() {
   Lang.apply();
   document.addEventListener('langchange', () => Lang.apply());
   Http.warm();
+  // Closing or reloading the tab asks first while a document is still being sent or entries would be lost.
+  Http.guardLeave(() => state.pending.length > 0 || unsaved('compose') || unsaved('managers'));
   if (state.session) {
     const cached = cachedHome();
     if (cached && cached.me) { state.me = cached.me; state.templates = cached.templates || []; return renderHome(); }

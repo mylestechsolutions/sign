@@ -16,8 +16,8 @@ const NDA = ['recipient_name', 'recipient_email', 'recipient_address', 'recipien
   'company_role_department', 'company_supervisor', 'company_effective_date', 'company_start_date', 'company_end_date',
   'company_work_location', 'company_security_contact', 'company_urgent_channel', 'company_signatory_name',
   'company_signatory_title', 'company_signature', 'company_signed_date', 'recipient_signature',
-  'recipient_signed_date', 'recipient_place'];
-const MOU = ['recipient_name', 'recipient_email', 'company_partner_name', 'company_signature', 'recipient_signature', 'recipient_place'];
+  'recipient_signed_date'];
+const MOU = ['recipient_name', 'recipient_email', 'company_partner_name', 'company_signature', 'recipient_signature'];
 const TEMPLATES = [
   { code: 'NDA', title_en: 'Student Intern Non Disclosure Agreement', title_fr: 'Accord de confidentialité', names: NDA, fields: meta(NDA) },
   { code: 'MOU', title_en: 'Memorandum of Understanding', title_fr: 'Protocole d\'accord', names: MOU, fields: meta(MOU) }
@@ -40,20 +40,30 @@ export async function start(port = 0) {
     codes: {}, sessions: {}, tickets: {}, seq: 0, log: [], url: '' };
   const send = (to, extra) => s.outbox.push(Object.assign({ to }, extra));
   const step = (number, event, actor) => s.log.push({ time: new Date().toISOString(), number, event, actor });
+  // As on the live back end: a session works only while its e-mail is on the managers list (checked every call).
   const manager = (token) => { const e = s.sessions[token]; const m = s.managers.find((x) => x.email === e); if (!m) throw fail('SIGN_IN'); return m; };
+  const owner = (token) => { const m = manager(token); if (m.role !== 'owner') throw fail('OWNER_ONLY'); return m; };
+  const known = (email) => s.managers.some((m) => m.email === email);
   const tpl = (code) => { const t = TEMPLATES.find((x) => x.code === code); if (!t) throw fail('NO_TEMPLATE'); return t; };
   const byLink = (req) => { const d = s.docs.find((x) => x.number === req.number); if (!d || d.secret !== req.secret) throw fail('LINK_INVALID'); return d; };
   const checkCode = (key, code) => { if (s.codes[key] !== String(code || '').trim()) throw fail('CODE_WRONG', { left: 4 }); delete s.codes[key]; };
   const newCode = () => C.codeFromHex(crypto.randomBytes(8).toString('hex'));
   const routes = {
-    'manager.requestCode': (r) => { const code = newCode(); s.codes['m:' + r.email] = code;
-      if (s.managers.some((m) => m.email === r.email)) send(r.email, { code }); return { sent: true }; },
-    'manager.verifyCode': (r) => { checkCode('m:' + r.email, r.code); const token = crypto.randomBytes(16).toString('hex');
+    'manager.requestCode': (r) => { if (!known(r.email)) throw fail('NOT_MANAGER');
+      const code = newCode(); s.codes['m:' + r.email] = code; send(r.email, { code }); return { sent: true }; },
+    'manager.verifyCode': (r) => { if (!known(r.email)) throw fail('NOT_MANAGER');
+      checkCode('m:' + r.email, r.code); const token = crypto.randomBytes(16).toString('hex');
       s.sessions[token] = r.email; return { session: token, me: Object.assign({ hasSignature: false }, s.managers.find((x) => x.email === r.email)) }; },
     'manager.me': (r) => Object.assign({ hasSignature: false }, manager(r.session)),
     'manager.signOut': (r) => { delete s.sessions[r.session]; return { ok: true }; },
     'manager.saveProfile': (r) => { const m = manager(r.session); m.name = r.name; m.title = r.title; return Object.assign({ hasSignature: false }, m); },
     'templates.list': (r) => { manager(r.session); return TEMPLATES.map((t) => ({ code: t.code, title_en: t.title_en, title_fr: t.title_fr, fields: t.fields })); },
+    'managers.list': (r) => { owner(r.session); return s.managers.map((m) => Object.assign({ hasSignature: false }, m)); },
+    'managers.add': (r) => { owner(r.session); const email = String(r.email || '').trim().toLowerCase();
+      if (!C.isEmail(email)) throw fail('BAD_EMAIL'); if (known(email)) throw fail('ALREADY_MANAGER');
+      s.managers.push({ email, name: r.name || '', title: r.title || '', role: 'manager' }); return { ok: true }; },
+    'managers.remove': (r) => { const o = owner(r.session); if (r.email === o.email) throw fail('OWNER_STAYS');
+      s.managers = s.managers.filter((m) => m.email !== r.email); return { ok: true }; },
     'documents.preview': (r) => { manager(r.session); return { pdf: pdf('preview').toString('base64') }; },
     'documents.send': (r) => {
       const m = manager(r.session);

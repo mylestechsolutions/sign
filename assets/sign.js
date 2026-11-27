@@ -2,7 +2,7 @@ import { showPdf } from './pdfview.js';
 
 const $ = (s) => document.querySelector(s);
 const [number, secret] = decodeURIComponent(location.hash.slice(1)).split('.');
-const st = { ticket: '', form: [], pad: null, ip: '', typeMode: false };
+const st = { ticket: '', form: [], pad: null, ip: '', typeMode: false, info: null, start: null, signing: false };
 const SECTIONS = ['s-message', 's-code', 's-doc', 's-done'];
 
 function show(id) { SECTIONS.forEach((s) => $('#' + s).classList.toggle('hidden', s !== id)); }
@@ -14,10 +14,14 @@ async function boot() {
   Lang.menu($('#lang'));
   Lang.apply();
   document.addEventListener('langchange', () => Lang.apply());
+  // Closing or reloading the tab asks first while the signature is on its way or entries would be lost.
+  Http.guardLeave(() => st.signing || (!$('#s-doc').classList.contains('hidden') && st.start !== null &&
+    (Http.entries($('#s-doc')) !== st.start || !st.pad.isEmpty())));
   if (!number || !secret) return message('sign.badlink');
   let info;
   try { info = await Http.call('recipient.open', { number, secret }); }
   catch (e) { return message(e.code === 'LINK_INVALID' ? 'sign.badlink' : null, e.message); }
+  st.info = info;
   bi($('#s-title'), info.title_en, info.title_fr);
   $('#s-number').textContent = info.number;
   Http.reportedIp().then((ip) => { st.ip = ip; });
@@ -100,8 +104,14 @@ async function docStep(r) {
     st.pad.clear();
   };
   $('#s-typed').oninput = () => st.pad.typed($('#s-typed').value);
-  $('#s-sign').onclick = sign;
+  // Signing is final, so it asks first (the agreement box alone is one click).
+  $('#s-sign').onclick = async () => {
+    const title = Lang.get() === 'fr' ? st.info.title_fr : st.info.title_en;
+    if (!(await Http.ask(Lang.t('sign.confirm', { title }), Lang.t('sign.go'), 'blue'))) return;
+    sign();
+  };
   update();
+  st.start = Http.entries($('#s-doc'));
   await showPdf($('#s-pages'), Http.bytes(r.pdf));
 }
 
@@ -109,6 +119,7 @@ function sign() {
   return Http.busy($('#s-sign'), async () => {
     $('#s-error').textContent = '';
     $('#s-why').textContent = Lang.t('sign.signing');
+    st.signing = true;
     try {
       const r = await Http.call('recipient.sign',
         { number, secret, ticket: st.ticket, values: values(), signature: st.pad.png(), agree: $('#s-agree').checked },
@@ -122,7 +133,7 @@ function sign() {
       $('#s-why').textContent = '';
       if (e.code === 'CODE_AGAIN') { codeStep({ sentTo: '' }); return; }
       $('#s-error').textContent = e.message;
-    }
+    } finally { st.signing = false; }
   });
 }
 

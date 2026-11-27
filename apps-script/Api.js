@@ -115,18 +115,21 @@ var Api = (function () {
   }
 
   var routes = {
+    // Only the managers the owner added (Managers and templates) get a code. Any other address is told that it is
+    // not recognized, and no code is made for it.
     'manager.requestCode': function (req) {
       var email = lower(req.email);
       if (!SignCore.isEmail(email)) throw fail_('BAD_EMAIL');
-      var code = Auth.issueCode('manager', email);
-      if (Store.manager(email)) Mail.code(email, code);
+      if (!Store.manager(email)) throw fail_('NOT_MANAGER');
+      Mail.code(email, Auth.issueCode('manager', email));
       return { sent: true };
     },
     'manager.verifyCode': function (req) {
       var email = lower(req.email);
+      if (!Store.manager(email)) throw fail_('NOT_MANAGER');
       Auth.checkCode('manager', email, req.code);
       var m = Store.manager(email);
-      if (!m) throw fail_('CODE_WRONG', { left: 0 });
+      if (!m) throw fail_('NOT_MANAGER');
       Store.log('', 'manager signed in', email, '', client(req));
       return { session: Auth.startSession(email), me: me(m) };
     },

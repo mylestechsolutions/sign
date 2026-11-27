@@ -72,6 +72,45 @@ var Http = (function () {
     document.body.appendChild(el);
     setTimeout(function () { el.remove(); }, 7000);
   }
+  // Asks before an action that cannot be taken back. Resolves true only on the action's own button; Cancel, the
+  // close button and Escape all resolve false. The close button comes first, so it has the focus: Enter never
+  // confirms by accident.
+  function ask(text, okLabel, tone) {
+    var d = document.getElementById('confirm');
+    if (!d) {
+      d = document.createElement('dialog');
+      d.id = 'confirm';
+      d.innerHTML = '<button class="x" aria-label="Close">&times;</button><p id="confirm-text"></p>' +
+        '<div class="actions"><button class="pill" id="confirm-ok"></button><button class="pill" id="confirm-no"></button></div>';
+      document.body.appendChild(d);
+    }
+    var ok = d.querySelector('#confirm-ok');
+    var no = d.querySelector('#confirm-no');
+    d.querySelector('#confirm-text').textContent = text;
+    ok.textContent = okLabel;
+    ok.className = 'pill ' + (tone || 'red');
+    no.textContent = Lang.t('ui.cancel');
+    return new Promise(function (resolve) {
+      function done(yes) { d.onclose = null; if (d.open) d.close(); resolve(yes); }
+      ok.onclick = function () { done(true); };
+      no.onclick = function () { done(false); };
+      d.querySelector('.x').onclick = function () { done(false); };
+      d.onclose = function () { done(false); };
+      d.showModal();
+    });
+  }
+  // What a screen's inputs hold, to tell whether leaving it would throw entries away.
+  function entries(root) {
+    return Array.prototype.map.call(root.querySelectorAll('input'), function (i) {
+      return i.type === 'checkbox' ? String(i.checked) : i.type === 'file' ? String(i.files.length) : i.value;
+    }).join('\u0000');
+  }
+  // Closing or reloading the tab asks first (the browser's own question) while unsaved() is true.
+  function guardLeave(unsaved) {
+    window.addEventListener('beforeunload', function (e) {
+      if (unsaved()) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
   return { call: call, reportedIp: reportedIp, bytes: bytes, download: download, fileBase64: fileBase64, toast: toast,
-    busy: busy, warm: warm };
+    busy: busy, warm: warm, ask: ask, entries: entries, guardLeave: guardLeave };
 })();
