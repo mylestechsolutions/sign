@@ -38,34 +38,64 @@ function unsaved(view) {
   return Http.entries($('#' + view)) !== state.start[view] || (view === 'compose' && !!state.pad && !state.pad.isEmpty());
 }
 
+const ICON = {
+  mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6L12 3Z"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+};
+// A text with values filled in, in both languages, so that the language menu can switch it (see bi).
+function both(key, vars) {
+  return ['en', 'fr'].map((l) => Object.keys(vars).reduce((s, k) => s.split('{' + k + '}').join(vars[k]), I18N[l][key]));
+}
+
+// One narrow card (the founder's design): the e-mail, then the code in the same place; Enter sends either.
 function renderSignin() {
   show('signin');
   $('#signin').innerHTML = `
-    <h1 data-i18n="signin.title"></h1><p class="muted" data-i18n="signin.lead"></p>
-    <label class="field"><span data-i18n="signin.email"></span><input id="si-email" type="email" autocomplete="email"></label>
-    <div class="actions"><button class="pill blue" id="si-send" data-i18n="signin.send"></button></div>
-    <div id="si-step2" class="hidden">
-      <p class="muted" data-i18n="signin.sent"></p>
-      <label class="field"><span data-i18n="signin.code"></span>
-        <input id="si-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
-      <div class="actions"><button class="pill blue" id="si-go" data-i18n="signin.go"></button></div>
+    <div class="card signin-card">
+      <div class="tile">${ICON.mail}</div>
+      <h1 data-i18n="signin.title"></h1>
+      <form id="si-step1" novalidate>
+        <p class="lead" data-i18n="signin.lead"></p>
+        <label class="field"><span data-i18n="signin.email"></span>
+          <input id="si-email" type="email" autocomplete="email" data-i18n-ph="signin.placeholder"></label>
+        <button class="pill blue large block" id="si-send" type="submit"><span data-i18n="signin.send"></span>${ICON.arrow}</button>
+      </form>
+      <form id="si-step2" class="hidden" novalidate>
+        <p class="lead" id="si-sent"></p>
+        <label class="field"><span data-i18n="signin.code"></span>
+          <input id="si-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+        <button class="pill blue large block" id="si-go" type="submit"><span data-i18n="signin.go"></span>${ICON.arrow}</button>
+        <button class="linkish" id="si-back" type="button" data-i18n="signin.back"></button>
+      </form>
+      <p class="error" id="si-error" role="alert"></p>
+      <div class="notice">${ICON.shield}<div><strong data-i18n="signin.noticeTitle"></strong><span data-i18n="signin.notice"></span></div></div>
     </div>
-    <p class="error" id="si-error"></p>`;
+    <p class="foot">© ${new Date().getFullYear()} MylesTech Solutions</p>`;
   Lang.apply($('#signin'));
-  $('#si-send').onclick = () => Http.busy($('#si-send'), async () => {
+  const step = (two) => { $('#si-step1').classList.toggle('hidden', two); $('#si-step2').classList.toggle('hidden', !two); };
+  $('#si-step1').onsubmit = (ev) => { ev.preventDefault(); Http.busy($('#si-send'), async () => {
     errorIn('#si-error');
-    try { await Http.call('manager.requestCode', { email: $('#si-email').value }); $('#si-step2').classList.remove('hidden'); $('#si-code').focus(); }
-    catch (e) { errorIn('#si-error', e); }
-  });
-  $('#si-go').onclick = () => Http.busy($('#si-go'), async () => {
+    const email = $('#si-email').value.trim();
+    try {
+      await Http.call('manager.requestCode', { email });
+      const [en, fr] = both('signin.sentTo', { email });
+      bi($('#si-sent'), en, fr);
+      $('#si-code').value = '';
+      step(true);
+      $('#si-code').focus();
+    } catch (e) { errorIn('#si-error', e); }
+  }); };
+  $('#si-step2').onsubmit = (ev) => { ev.preventDefault(); Http.busy($('#si-go'), async () => {
     errorIn('#si-error');
     try {
-      const r = await Http.call('manager.verifyCode', { email: $('#si-email').value, code: $('#si-code').value });
+      const r = await Http.call('manager.verifyCode', { email: $('#si-email').value.trim(), code: $('#si-code').value });
       localStorage.removeItem(HOME);
       state.session = r.session; state.me = r.me; localStorage.setItem('mts.session', r.session);
       renderHome();
     } catch (e) { errorIn('#si-error', e); }
-  });
+  }); };
+  $('#si-back').onclick = () => { errorIn('#si-error'); step(false); $('#si-email').focus(); };
 }
 
 async function renderHome() {

@@ -165,6 +165,21 @@ test('only managers the owner added get in; adding, removing, closing and signin
     await helper.goto(srv.url + '/index.html');
     await refused(helper, 'helper@test.local');
 
+    // the sign-in card as designed: heading, notice, footer; Enter sends the code; "Use another email" goes back
+    await owner.goto(srv.url + '/index.html');
+    assert.equal(await owner.textContent('#signin h1'), 'Administrator sign in');
+    assert.equal(await owner.getAttribute('#si-email', 'placeholder'), 'you@mylestechsolutionsllc.com');
+    assert.match(await owner.textContent('#signin .notice'), /Authorized access only.*Access and activity are monitored and recorded\./);
+    assert.match(await owner.textContent('#signin .foot'), /© \d{4} MylesTech Solutions/);
+    await owner.fill('#si-email', 'owner@test.local');
+    await owner.press('#si-email', 'Enter');
+    await owner.waitForSelector('#si-step2:not(.hidden)');
+    assert.match(await owner.textContent('#si-sent'), /We sent a 6-digit code to owner@test\.local\./);
+    assert.equal(await owner.isVisible('#si-email'), false, 'the code takes the place of the e-mail');
+    await owner.click('#si-back');
+    await owner.waitForSelector('#si-step1:not(.hidden)');
+    assert.equal(await owner.inputValue('#si-email'), 'owner@test.local', 'going back keeps the address');
+
     // the owner adds the helper: it asks first, Cancel adds nobody, closing with the entry asks too
     await signIn(owner, 'owner@test.local');
     await owner.click('#h-managers');

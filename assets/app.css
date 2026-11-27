@@ -10,11 +10,12 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--navy); font: 15px/1.5 var(--font); }
-.top { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; }
+.top { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #fff;
+  border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.01em; font-size: 17px; }
 .brand .logo { height: 48px; width: 48px; display: block; border-radius: 12px; box-shadow: var(--rest); }
 .brand span { color: var(--blue); }
-main { max-width: 980px; margin: 0 auto; padding: 8px 16px 64px; }
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 64px; }
 h1 { font-size: 26px; letter-spacing: -.02em; margin: 6px 0 4px; }
 h2 { font-size: 18px; margin: 0 0 12px; }
 .muted { color: var(--muted); }
@@ -80,7 +81,7 @@ dialog::backdrop { background: rgba(23,35,60,.35); }
 .drop.over { border-color: var(--blue); background: var(--blue-soft); }
 details.fold > summary { cursor: pointer; font-weight: 700; list-style: none; }
 .hidden { display: none !important; }
-@media (max-width: 640px) { .card { padding: 16px; } main { padding: 4px 10px 48px; } h1 { font-size: 22px; } .filters { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .card { padding: 16px; } main { padding: 12px 10px 48px; } h1 { font-size: 22px; } .filters { grid-template-columns: 1fr; } }
 
 /* Work in progress: a spinner on the busy button, a loading line, the row of a document still being sent */
 .pill.busy { pointer-events: none; cursor: progress; }
@@ -93,3 +94,31 @@ details.fold > summary { cursor: pointer; font-weight: 700; list-style: none; }
 @media (prefers-reduced-motion: reduce) { .pill.busy::before, .loading::before { animation-duration: 2.4s; } }
 .badge.sending::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: -1px;
   border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+
+/* Sign-in (the founder's design): one narrow card in the middle with an icon tile, the restricted-access notice
+   under a line, and a footer below the card */
+.signin { max-width: 440px; margin: 28px auto 0; }
+.signin-card { padding: 32px; }
+.tile { width: 52px; height: 52px; border-radius: 14px; background: var(--blue-soft); color: var(--blue);
+  display: grid; place-items: center; margin-bottom: 14px; }
+.tile svg { width: 28px; height: 28px; }
+.signin h1 { font-size: 30px; font-weight: 800; line-height: 1.15; margin: 0 0 8px; }
+.signin .lead { color: var(--ink2); font-size: 16px; margin: 0 0 22px; }
+.signin label.field { color: var(--navy); font-size: 14px; font-weight: 700; margin-bottom: 18px; }
+.signin input { margin-top: 8px; padding: 13px 16px; font-size: 16px; }
+#si-code { font-size: 20px; letter-spacing: .3em; font-variant-numeric: tabular-nums; }
+.pill.block { display: flex; width: 100%; }
+.pill svg { width: 18px; height: 18px; flex: none; }
+.linkish { display: block; margin: 12px auto 0; padding: 6px 8px; border: 0; border-radius: 8px; background: none;
+  color: var(--blue); font: 600 14px var(--font); cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+.linkish:focus-visible { outline: 3px solid var(--blue-soft); }
+.signin .error { margin: 14px 0 0; }
+.signin .error:empty { display: none; }
+.notice { display: flex; gap: 12px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line);
+  color: var(--ink2); font-size: 13px; line-height: 1.55; }
+.notice svg { flex: none; width: 22px; height: 22px; margin-top: 1px; color: var(--ink2); }
+.notice strong { display: block; margin-bottom: 4px; color: var(--navy); font-size: 14px; }
+.foot { margin: 56px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) { .signin { margin-top: 4px; } .signin-card { padding: 22px; } .signin h1 { font-size: 26px; }
+  .foot { margin-top: 32px; } }
